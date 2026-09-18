@@ -1,0 +1,103 @@
+{
+  "profile": {
+    "name": "My Love",
+    "joined": "2026-09-01"
+  },
+  "xp": 340,
+  "level": 3,
+  "habits": [
+    {
+      "id": "habit001",
+      "title": "Morning Stretch",
+      "frequency": "Daily",
+      "streak": 12,
+      "completedToday": true,
+      "totalCompletions": 28
+    },
+    {
+      "id": "habit002",
+      "title": "Read 20 pages",
+      "frequency": "Daily",
+      "streak": 7,
+      "completedToday": false,
+      "totalCompletions": 19
+    },
+    {
+      "id": "habit003",
+      "title": "Drink 3L Water",
+      "frequency": "Daily",
+      "streak": 21,
+      "completedToday": true,
+      "totalCompletions": 45
+    },
+    {
+      "id": "habit004",
+      "title": "No Social Media after 9 PM",
+      "frequency": "Weekdays",
+      "streak": 5,
+      "completedToday": false,
+      "totalCompletions": 14
+    },
+    {
+      "id": "habit005",
+      "title": "Evening Walk",
+      "frequency": "Weekends",
+      "streak": 3,
+      "completedToday": false,
+      "totalCompletions": 8
+    }
+  ],
+  "todos": [
+    {
+      "id": "todo001",
+      "title": "Finish project report",
+      "priority": "high",
+      "alarm": "18:30",
+      "completed": false,
+      "alarmTriggered": false
+    },
+    {
+      "id": "todo002",
+      "title": "Call mom",
+      "priority": "medium",
+      "alarm": "20:00",
+      "completed": false,
+      "alarmTriggered": false
+    },
+    {
+      "id": "todo003",
+      "title": "Buy groceries",
+      "priority": "low",
+      "alarm": null,
+      "completed": true,
+      "alarmTriggered": false
+    },
+    {
+      "id": "todo004",
+      "title": "Review pull requests",
+      "priority": "high",
+      "alarm": "14:00",
+      "completed": false,
+      "alarmTriggered": false
+    },
+    {
+      "id": "todo005",
+      "title": "Plan weekend trip",
+      "priority": "medium",
+      "alarm": null,
+      "completed": false,
+      "alarmTriggered": false
+    }
+  ],
+  "settings": {
+    "streakFreezes": 2,
+    "maxFreezes": 2,
+    "soundEnabled": true,
+    "voiceEnabled": true,
+    "vibrationEnabled": true,
+    "lastQuoteTime": 0
+  },
+  "badges": [],
+  "moodHistory": [],
+  "lastDailyReset": "Fri Sep 18 2026"
+}
