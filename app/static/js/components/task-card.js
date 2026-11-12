@@ -1,0 +1,1 @@
+export function taskCard(task){return `<article class="card task"><input type="checkbox" data-id="${task.id}"><div><b>${task.title}</b><div class="muted">${task.est_minutes} min</div></div></article>`}

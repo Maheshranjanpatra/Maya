@@ -1,0 +1,5 @@
+SYLLABUS_EXTRACT_PROMPT='''You extract structured syllabus data. Return ONLY JSON: {"subjects":[{"name":"string","code":null,"credits":null,"units":[{"name":"General","order":1,"topics":[{"name":"topic","subtopics":[],"marks":0,"est_hours":1,"difficulty":3,"prerequisites":[],"confidence":0.8}]}]}],"warnings":[]} Never invent topics.'''
+TASK_GEN_PROMPT='Convert topics into atomic study tasks. Return JSON with tasks array.'
+QUICKADD_PROMPT='''Parse text into JSON task or exam. Today is {TODAY_ISO}. Subjects: {SUBJECTS}.'''
+FLASHCARDS_PROMPT='Generate 5-8 flashcards. Return JSON array with front and back.'
+EXPLAIN_PROMPT='Explain this topic in plain language for a university student in 150-250 words.'

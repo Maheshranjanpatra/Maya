@@ -1,0 +1,1 @@
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px;box-shadow:var(--shadow-1);margin:12px 0}.button{background:var(--primary);color:white;border:0;border-radius:9px;padding:10px 15px}.muted{color:var(--text-muted)}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}

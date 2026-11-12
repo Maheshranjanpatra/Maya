@@ -1,0 +1,1 @@
+export function modal(html){const root=document.querySelector('#modal-root');root.innerHTML=`<div class='card'>${html}<button id='close-modal'>Close</button></div>`;root.querySelector('button').onclick=()=>root.innerHTML=''}

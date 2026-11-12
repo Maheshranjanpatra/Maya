@@ -1,0 +1,1 @@
+export async function render(c){c.innerHTML='<h1>Plan</h1><article class=card><p class=muted>Your study schedule and planning tools.</p></article>'}

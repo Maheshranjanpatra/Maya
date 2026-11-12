@@ -1,0 +1,1 @@
+export function startTimer(seconds=1500,onDone=()=>{}){let left=seconds;const timer=setInterval(()=>{left--;if(left<=0){clearInterval(timer);onDone()}},1000);return()=>clearInterval(timer)}

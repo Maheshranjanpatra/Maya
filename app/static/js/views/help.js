@@ -1,0 +1,1 @@
+export async function render(c){c.innerHTML='<h1>Help</h1><article class=card><p class=muted>Keyboard shortcuts and how Maya works.</p></article>'}

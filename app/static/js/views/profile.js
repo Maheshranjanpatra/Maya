@@ -1,0 +1,1 @@
+import {api} from '../api.js';export async function render(c){c.innerHTML='<h1>Profile</h1><article class=card id=p>Loading profile…</article>';try{const p=await api('/api/profile');c.querySelector('#p').innerHTML=`<h2>Level ${p.level} · ${p.title}</h2><h1>${p.xp_total} XP</h1><p class=muted>Streak: ${p.streak} days</p>`}catch(e){c.querySelector('#p').textContent=e.message}}

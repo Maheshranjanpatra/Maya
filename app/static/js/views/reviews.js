@@ -1,0 +1,1 @@
+export async function render(c){c.innerHTML='<h1>Reviews</h1><article class=card><p class=muted>Spaced repetition review queue.</p></article>'}

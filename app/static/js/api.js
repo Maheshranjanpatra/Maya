@@ -1,0 +1,1 @@
+export async function api(url,options={}){const key=localStorage.getItem('maya-lock-key')||'';const headers={'Content-Type':'application/json','X-Web-Lock-Key':key,...options.headers};if(options.body instanceof FormData)delete headers['Content-Type'];const r=await fetch(url,{...options,headers});const j=await r.json();if(!j.ok)throw Error(j.error||'Request failed');return j.data}

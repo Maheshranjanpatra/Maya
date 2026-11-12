@@ -1,0 +1,1 @@
+h1{font-size:1.8rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.task{display:flex;align-items:center;gap:12px}.pill{background:var(--primary-soft);color:var(--primary);padding:4px 9px;border-radius:99px;font-size:.8rem}canvas{max-width:100%}

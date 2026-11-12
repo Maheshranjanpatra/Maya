@@ -1,0 +1,1 @@
+export function nav(){const routes=['tasks','syllabus','visuals','profile','reviews','plan','exams','calendar','settings','help'];document.querySelector('#side-links').innerHTML=routes.map(x=>`<p><a href='#/${x}'>${x[0].toUpperCase()+x.slice(1)}</a></p>`).join('')}

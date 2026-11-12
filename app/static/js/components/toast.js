@@ -1,0 +1,1 @@
+export function toast(msg){const el=document.createElement('div');el.className='card';el.textContent=msg;document.querySelector('#toast-container').append(el);setTimeout(()=>el.remove(),3500)}

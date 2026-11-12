@@ -1,0 +1,1 @@
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px var(--font)}button,input,textarea,select{font:inherit}button,a{cursor:pointer}button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
