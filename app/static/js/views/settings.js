@@ -2,6 +2,8 @@ import { api } from '../api.js';
 import { showSheet, escapeHTML } from '../components/dom.js';
 import { applyTheme } from '../components/theme.js';
 import { toast } from '../components/toast.js';
+import { IDB } from '../idb.js';
+import { ICONS } from '../components/icons.js';
 
 const weekdays = [
   ['Monday', 0], ['Tuesday', 1], ['Wednesday', 2], ['Thursday', 3],
@@ -26,7 +28,7 @@ export async function render(container) {
         <div id="blackout-list" class="view-stack"></div>
       </article>
       <article class="card"><p class="eyebrow">AI tools</p><h2>Gemini API key</h2><p class="muted" id="gemini-status"></p>
-        <label>Gemini API key<input id="gemini-key" type="password" autocomplete="new-password" placeholder="Paste your key from Google AI Studio"></label>
+        <div class="api-key-setting"><label for="gemini-key">Gemini API key</label><div class="api-key-field"><input id="gemini-key" type="password" autocomplete="off" placeholder="Paste your key from Google AI Studio"><button class="icon-button" id="toggle-gemini-key" type="button" aria-label="Show API key" aria-pressed="false">${ICONS.eye}</button></div></div>
         <label class="inline-check"><input id="clear-gemini" type="checkbox">Remove the saved key</label>
         <p><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Get a Gemini API key</a></p>
       </article>
@@ -39,9 +41,11 @@ export async function render(container) {
   try {
     const [result, blackouts] = await Promise.all([api('/api/settings'), api('/api/blackouts')]);
     fillSettings(container, result.settings);
+    const storedSettings = await IDB.get('settings', 1);
+    container.querySelector('#gemini-key').value = storedSettings?.gemini_api_key || '';
     container.querySelector('#gemini-status').textContent = result.active_provider
-      ? 'Gemini is configured and ready.'
-      : 'Add a key to enable extraction, explanations, flashcards, and natural-language quick add.';
+      ? 'Gemini is ready. Your key is saved in this browser and will be reused automatically.'
+      : 'Add one key to enable extraction, explanations, flashcards, and natural-language quick add. It will be saved in this browser.';
     drawBlackouts(container, blackouts);
     bindSettings(container);
   } catch (error) {
@@ -112,14 +116,23 @@ function bindSettings(container) {
   container.querySelector('#export-ics').onclick = () => download('/api/export/ics', 'maya.ics');
   container.querySelector('#export-backup').onclick = () => download('/api/export/backup', 'maya-backup.json');
   container.querySelector('#restore-file').addEventListener('change', event => restoreBackup(event, container));
-  container.querySelector('#gemini-key').form?.addEventListener('submit', event => event.preventDefault());
-  container.querySelector('#gemini-key').addEventListener('keydown', event => {
+  const keyInput = container.querySelector('#gemini-key');
+  const keyToggle = container.querySelector('#toggle-gemini-key');
+  keyToggle.addEventListener('click', () => {
+    const visible = keyInput.type === 'password';
+    keyInput.type = visible ? 'text' : 'password';
+    keyToggle.innerHTML = visible ? ICONS.eyeOff : ICONS.eye;
+    keyToggle.setAttribute('aria-label', visible ? 'Hide API key' : 'Show API key');
+    keyToggle.setAttribute('aria-pressed', String(visible));
+  });
+  keyInput.form?.addEventListener('submit', event => event.preventDefault());
+  keyInput.addEventListener('keydown', event => {
     if (event.key === 'Enter') saveSecrets(container);
   });
   const saveButton = document.createElement('button');
   saveButton.type = 'button';
   saveButton.className = 'button';
-  saveButton.textContent = 'Save keys';
+  saveButton.textContent = 'Save API key';
   saveButton.id = 'save-keys';
   container.querySelector('#gemini-key').closest('.card').append(saveButton);
   saveButton.onclick = () => saveSecrets(container);
@@ -140,8 +153,15 @@ async function saveSecrets(container) {
   }
   try {
     await api('/api/settings', { method: 'PATCH', body: JSON.stringify(data) });
-    container.querySelector('#gemini-key').value = '';
     container.querySelector('#clear-gemini').checked = false;
+    if (removeGemini) {
+      container.querySelector('#gemini-key').value = '';
+      container.querySelector('#gemini-key').type = 'password';
+      const toggle = container.querySelector('#toggle-gemini-key');
+      toggle.innerHTML = ICONS.eye;
+      toggle.setAttribute('aria-label', 'Show API key');
+      toggle.setAttribute('aria-pressed', 'false');
+    }
     toast('Gemini key saved on this device.');
     window.dispatchEvent(new CustomEvent('maya:refresh'));
   } catch (error) { toast(error.message); }

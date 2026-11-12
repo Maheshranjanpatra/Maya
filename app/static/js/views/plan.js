@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { queuedPatch } from '../sync.js';
 import { escapeHTML, showSheet } from '../components/dom.js';
 import { toast } from '../components/toast.js';
+import { ICONS } from '../components/icons.js';
 
 let weekStart;
 let planData;
@@ -10,7 +11,7 @@ export async function render(container) {
   weekStart = startOfWeek(new Date());
   container.innerHTML = `
     <header class="view-heading"><div><p class="eyebrow">A week at a time</p><h1>Plan</h1><p>Tasks are placed before their deadlines, with room left for catch-up.</p></div><button id="replan" class="button button-quiet">Replan</button></header>
-    <div class="calendar-header card"><button class="icon-button" id="week-prev" aria-label="Previous week">Prev</button><h2 id="week-title"></h2><button class="icon-button" id="week-next" aria-label="Next week">Next</button></div>
+    <div class="calendar-header card"><button class="icon-button" id="week-prev" aria-label="Previous week">${ICONS.chevronLeft}</button><h2 id="week-title"></h2><button class="icon-button" id="week-next" aria-label="Next week">${ICONS.chevronRight}</button></div>
     <div id="crunch-note" class="status-message" hidden></div>
     <section id="week-grid" class="plan-grid"></section>`;
   container.querySelector('#week-prev').onclick = () => moveWeek(container, -7);

@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { escapeHTML, showSheet } from '../components/dom.js';
 import { toast } from '../components/toast.js';
+import { ICONS } from '../components/icons.js';
 
 const TYPES = ['midterm', 'final', 'quiz', 'practical'];
 
@@ -51,7 +52,7 @@ async function examForm(container, existing = null) {
     catch { return []; }
   })();
   const sheet = showSheet(`
-    <div class="sheet-handle" aria-hidden="true"></div><div class="sheet-heading"><div><p class="eyebrow">${existing ? 'Update your deadline' : 'Set a deadline'}</p><h2>${existing ? 'Edit exam' : 'Add exam'}</h2></div><button class="icon-button" data-close-sheet aria-label="Close">Close</button></div>
+    <div class="sheet-handle" aria-hidden="true"></div><div class="sheet-heading"><div><p class="eyebrow">${existing ? 'Update your deadline' : 'Set a deadline'}</p><h2>${existing ? 'Edit exam' : 'Add exam'}</h2></div><button class="icon-button" data-close-sheet aria-label="Close">${ICONS.close}</button></div>
     <form id="exam-form" class="form-grid">
       <label class="span-2">Subject<select name="subject_id" id="exam-subject" required>${options || '<option value="">Add an active subject first</option>'}</select></label>
       <label>Exam date<input name="exam_date" type="date" value="${escapeHTML(existing?.exam_date || '')}" required></label>

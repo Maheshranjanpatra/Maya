@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { showSheet, escapeHTML } from '../components/dom.js';
 import { toast } from '../components/toast.js';
+import { ICONS } from '../components/icons.js';
 
 const taskTypes = ['read', 'notes', 'practice', 'pastpaper', 'revise', 'mocktest', 'lab', 'assignment'];
 
@@ -45,7 +46,7 @@ async function confirmQuickAdd(item, originalText) {
   const dateField = `<label>${resultType === 'exam' ? 'Exam date' : 'Due date'}<input name="date" type="date" value="${escapeHTML(item.date || '')}" required></label>`;
   const sheet = showSheet(`
     <div class="sheet-handle" aria-hidden="true"></div>
-    <div class="sheet-heading"><div><p class="eyebrow">Quick add preview</p><h2>Confirm ${resultType}</h2></div><button class="icon-button" data-close-sheet aria-label="Close">×</button></div>
+    <div class="sheet-heading"><div><p class="eyebrow">Quick add preview</p><h2>Confirm ${resultType}</h2></div><button class="icon-button" data-close-sheet aria-label="Close">${ICONS.close}</button></div>
     <p class="muted">${escapeHTML(originalText)}</p>
     <form id="quickadd-confirm">
       <label>Title<input name="title" value="${escapeHTML(item.title || originalText)}" required></label>

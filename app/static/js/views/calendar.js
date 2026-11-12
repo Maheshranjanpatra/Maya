@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { escapeHTML } from '../components/dom.js';
 import { toast } from '../components/toast.js';
+import { ICONS } from '../components/icons.js';
 
 let visibleMonth;
 let selectedDate;
@@ -15,7 +16,7 @@ export async function render(container) {
     <header class="view-heading"><div><p class="eyebrow">See the month clearly</p><h1>Calendar</h1><p>Study tasks, exams, and the effort behind them.</p></div></header>
     <section class="view-stack">
       <article class="card">
-        <div class="calendar-header"><button class="icon-button" id="month-prev" aria-label="Previous month">Prev</button><h2 id="month-title"></h2><button class="icon-button" id="month-next" aria-label="Next month">Next</button></div>
+        <div class="calendar-header"><button class="icon-button" id="month-prev" aria-label="Previous month">${ICONS.chevronLeft}</button><h2 id="month-title"></h2><button class="icon-button" id="month-next" aria-label="Next month">${ICONS.chevronRight}</button></div>
         <div class="calendar-grid" id="month-grid" role="grid"></div>
       </article>
       <article class="card"><p class="eyebrow" id="selected-label"></p><h2 id="selected-title">Selected day</h2><div id="selected-items" class="view-stack"></div></article>
@@ -54,7 +55,7 @@ function drawMonth(container) {
     const taskCount = Number(day.task_count);
     const examCount = Number(day.exam_count);
     const intensity = Math.min(.38, Math.max(0, Number(day.xp)) / maxXp * .38);
-    return `<button type="button" class="calendar-day ${day.date === today ? 'is-today' : ''} ${day.date === selectedDate ? 'is-selected' : ''}" data-calendar-date="${day.date}" style="background-color:color-mix(in srgb,var(--primary) ${Math.round(intensity * 100)}%,transparent)" aria-label="${day.date}: ${taskCount} tasks, ${examCount} exams">
+    return `<button type="button" class="calendar-day ${day.date === today ? 'is-today' : ''} ${day.date === selectedDate ? 'is-selected' : ''} ${examCount ? 'has-exam' : ''}" data-calendar-date="${day.date}" style="--day-intensity:${Math.round(intensity * 100)}%" aria-label="${day.date}: ${taskCount} tasks, ${examCount} exams${examCount ? ', exam day' : ''}">
       <span>${number}</span><span class="calendar-markers">${taskCount ? '<i></i>' : ''}${examCount ? '<i class="exam-marker"></i>' : ''}</span>
     </button>`;
   }).join('');

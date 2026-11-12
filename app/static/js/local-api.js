@@ -72,6 +72,8 @@ async function taskRows(filters = {}) {
       exam_weight: subject?.exam_weight || 100,
       topic_name: topic?.name || '',
       unit_id: unit?.id || null,
+      unit_name: unit?.name || '',
+      unit_order: Number(unit?.order_index || 0),
       prereq_task_ids: dependencies.filter(item => item.task_id === task.id).map(item => item.prereq_task_id),
       is_due_revision: Boolean(task.is_revision && task.scheduled_date && task.scheduled_date <= today() && task.status !== 'done')
     };

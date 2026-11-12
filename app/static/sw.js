@@ -1,10 +1,14 @@
-const CACHE = 'maya-shell-v8';
+const CACHE = 'maya-shell-v9';
 const SHELL = [
   '/',
   '/static/manifest.json',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
-  '/static/icons/icon-maskable-512.png',
+  '/static/icons/favicon.svg',
+  '/static/icons/favicon.ico',
+  '/static/icons/favicon-16x16.png',
+  '/static/icons/favicon-32x32.png',
+  '/static/icons/apple-touch-icon.png',
   '/static/css/tokens.css',
   '/static/css/base.css',
   '/static/css/components.css',

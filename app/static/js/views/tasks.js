@@ -4,6 +4,7 @@ import { queuedPatch, queuedRequest } from '../sync.js';
 import { escapeHTML, showSheet } from '../components/dom.js';
 import { toast } from '../components/toast.js';
 import { formatTime, startTimer } from '../features/timer.js';
+import { ICONS } from '../components/icons.js';
 
 const TYPES = ['read', 'notes', 'practice', 'pastpaper', 'revise', 'mocktest', 'lab', 'assignment'];
 let taskCache = [];
@@ -104,7 +105,7 @@ function drawTasks(container) {
     return;
   }
 
-  list.innerHTML = tasks.map(task => {
+  const taskMarkup = task => {
     const state = task.status === 'done' ? 'is-completed' : '';
     const dateLabel = task.scheduled_date ? `Scheduled ${escapeHTML(task.scheduled_date)}` : 'Not scheduled';
     const dueLabel = task.is_due_revision ? '<span class="pill pill-warning">Review due</span>' : '';
@@ -114,7 +115,7 @@ function drawTasks(container) {
         <input type="checkbox" data-complete-task="${task.id}" ${task.status === 'done' ? 'checked' : ''} aria-label="Complete ${escapeHTML(task.title)}">
       </label>
       <div class="task-content">
-        <div class="task-title-row"><div><h2 class="task-title">${escapeHTML(task.title)}</h2>
+        <div class="task-title-row"><div><h4 class="task-title">${escapeHTML(task.title)}</h4>
           <div class="task-meta"><span>${escapeHTML(task.subject_name || 'Subject')}</span><span>${Number(task.est_minutes || 0)} min</span><span>${dateLabel}</span>${dueLabel}${missed}</div>
         </div><label class="bulk-select"><input type="checkbox" data-select-task="${task.id}" aria-label="Select task for bulk edit"><span>Select</span></label></div>
         <div class="task-actions">
@@ -124,7 +125,35 @@ function drawTasks(container) {
         </div>
       </div>
     </article>`;
-  }).join('');
+  };
+  const subjects = new Map();
+  tasks.forEach(task => {
+    const subjectId = task.subject_id ?? 'unassigned';
+    if (!subjects.has(subjectId)) {
+      subjects.set(subjectId, { name: task.subject_name || 'Other tasks', units: new Map() });
+    }
+    const subject = subjects.get(subjectId);
+    const unitId = task.unit_id ?? 'general';
+    if (!subject.units.has(unitId)) {
+      subject.units.set(unitId, {
+        name: task.unit_name || 'General tasks',
+        order: task.unit_id == null ? Number.MAX_SAFE_INTEGER : Number(task.unit_order || 0),
+        tasks: []
+      });
+    }
+    subject.units.get(unitId).tasks.push(task);
+  });
+  list.innerHTML = [...subjects.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(subject => `<section class="task-subject-group">
+      <h2 class="task-group-heading">${escapeHTML(subject.name)}</h2>
+      ${[...subject.units.values()]
+        .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+        .map(unit => `<section class="task-unit-group">
+          <h3 class="task-unit-heading">${escapeHTML(unit.name)}</h3>
+          <div class="task-unit-list">${unit.tasks.map(taskMarkup).join('')}</div>
+        </section>`).join('')}
+    </section>`).join('');
 
   list.querySelectorAll('[data-complete-task]').forEach(input => {
     input.addEventListener('change', () => toggleTask(container, Number(input.dataset.completeTask), input.checked));
@@ -179,7 +208,7 @@ function skipTask(container, id) {
   if (!task) return;
   const sheet = showSheet(`
     <div class="sheet-handle" aria-hidden="true"></div>
-    <div class="sheet-heading"><div><p class="eyebrow">Skip task</p><h2>${escapeHTML(task.title)}</h2></div><button class="icon-button" data-close-sheet aria-label="Close">Close</button></div>
+    <div class="sheet-heading"><div><p class="eyebrow">Skip task</p><h2>${escapeHTML(task.title)}</h2></div><button class="icon-button" data-close-sheet aria-label="Close">${ICONS.close}</button></div>
     <form id="skip-form"><label>Reason <textarea name="reason" placeholder="Optional: what got in the way?"></textarea></label>
       <div class="sheet-actions"><button type="button" class="button button-quiet" data-close-sheet>Cancel</button><button class="button button-danger" type="submit">Skip task</button></div>
     </form>`);
@@ -291,7 +320,7 @@ async function openTaskForm(container) {
   ).join('');
   const sheet = showSheet(`
     <div class="sheet-handle" aria-hidden="true"></div>
-    <div class="sheet-heading"><div><p class="eyebrow">Keep it small</p><h2>Add a task</h2></div><button class="icon-button" data-close-sheet aria-label="Close">Close</button></div>
+    <div class="sheet-heading"><div><p class="eyebrow">Keep it small</p><h2>Add a task</h2></div><button class="icon-button" data-close-sheet aria-label="Close">${ICONS.close}</button></div>
     <form id="new-task-form" class="form-grid">
       <label class="span-2">Task name<input name="title" required maxlength="200" placeholder="Review lecture notes"></label>
       <label>Subject<select name="subject_id" required>${options || '<option value="">Create a subject first</option>'}</select></label>
@@ -324,7 +353,7 @@ function openTimer(container, initialTaskId) {
   ).join('');
   const sheet = showSheet(`
     <div class="sheet-handle" aria-hidden="true"></div>
-    <div class="sheet-heading"><div><p class="eyebrow">Focus mode</p><h2 id="timer-phase">Focus</h2></div><button class="icon-button" data-close-sheet aria-label="Close">Close</button></div>
+    <div class="sheet-heading"><div><p class="eyebrow">Focus mode</p><h2 id="timer-phase">Focus</h2></div><button class="icon-button" data-close-sheet aria-label="Close">${ICONS.close}</button></div>
     <label>Study task<select id="timer-task">${options || '<option value="">Unlinked focus session</option>'}</select></label>
     <div class="timer-face"><span id="timer-display" class="timer-clock">25:00</span><span id="timer-caption" class="muted">Focus session</span></div>
     <div class="split-actions"><button id="timer-start" class="button">Start</button><button id="timer-pause" class="button button-quiet">Pause</button><button id="timer-reset" class="button button-quiet">Reset</button></div>`);

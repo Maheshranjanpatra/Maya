@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { IDB } from '../idb.js';
 import { escapeHTML, showSheet } from '../components/dom.js';
 import { toast } from '../components/toast.js';
+import { ICONS } from '../components/icons.js';
 
 let draft;
 let subjectSummary;
@@ -95,7 +96,7 @@ async function toggleArchive(container, button) {
 
 function addSubject() {
   const sheet = showSheet(`
-    <div class="sheet-handle" aria-hidden="true"></div><div class="sheet-heading"><div><p class="eyebrow">New study area</p><h2>Add a subject</h2></div><button class="icon-button" data-close-sheet aria-label="Close">Close</button></div>
+    <div class="sheet-handle" aria-hidden="true"></div><div class="sheet-heading"><div><p class="eyebrow">New study area</p><h2>Add a subject</h2></div><button class="icon-button" data-close-sheet aria-label="Close">${ICONS.close}</button></div>
     <form id="subject-form"><label>Subject name<input name="name" required maxlength="120" placeholder="e.g. Linear Algebra"></label><label>Course code (optional)<input name="code" maxlength="40"></label><div class="sheet-actions"><button type="button" class="button button-quiet" data-close-sheet>Cancel</button><button type="submit" class="button">Add subject</button></div></form>`);
   sheet.root.querySelector('#subject-form').addEventListener('submit', async event => {
     event.preventDefault();
@@ -336,7 +337,7 @@ function editTopic(container, button, subjectId) {
 async function aiExplain(topicId) {
   try {
     const result = await api('/api/ai/explain', { method: 'POST', body: JSON.stringify({ topic_id: topicId }) });
-    const sheet = showSheet(`<div class="sheet-handle" aria-hidden="true"></div><div class="sheet-heading"><h2>Topic explanation</h2><button class="icon-button" data-close-sheet>Close</button></div><p class="explanation-text"></p>`);
+    const sheet = showSheet(`<div class="sheet-handle" aria-hidden="true"></div><div class="sheet-heading"><h2>Topic explanation</h2><button class="icon-button" data-close-sheet aria-label="Close">${ICONS.close}</button></div><p class="explanation-text"></p>`);
     sheet.root.querySelector('.explanation-text').textContent = result.text;
   } catch (error) { toast(error.message); }
 }
@@ -345,7 +346,7 @@ async function showFlashcards(topicId) {
   try {
     const cards = await api('/api/ai/flashcards', { method: 'POST', body: JSON.stringify({ topic_id: topicId }) });
     let index = 0;
-    const sheet = showSheet(`<div class="sheet-handle" aria-hidden="true"></div><div class="sheet-heading"><h2>Flashcards</h2><button class="icon-button" data-close-sheet>Close</button></div><article class="card flashcard"><p class="eyebrow" id="flashcard-count"></p><h3 id="flashcard-front"></h3><div id="flashcard-back" class="review-answer" hidden></div><button class="button button-quiet" id="flip-card">Show answer</button><button class="small-action" id="next-card">Next card</button></article>`);
+    const sheet = showSheet(`<div class="sheet-handle" aria-hidden="true"></div><div class="sheet-heading"><h2>Flashcards</h2><button class="icon-button" data-close-sheet aria-label="Close">${ICONS.close}</button></div><article class="card flashcard"><p class="eyebrow" id="flashcard-count"></p><h3 id="flashcard-front"></h3><div id="flashcard-back" class="review-answer" hidden></div><button class="button button-quiet" id="flip-card">Show answer</button><button class="small-action" id="next-card">Next card</button></article>`);
     const draw = () => {
       sheet.root.querySelector('#flashcard-count').textContent = `Card ${index + 1} of ${cards.length}`;
       sheet.root.querySelector('#flashcard-front').textContent = cards[index].front;
