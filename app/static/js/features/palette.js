@@ -1,6 +1,5 @@
 
 const pages = [
-    ['Dashboard', 'dashboard'],
     ['Tasks', 'tasks'],
     ['Syllabus', 'syllabus'],
     ['Visuals', 'visuals'],

@@ -1,47 +1,29 @@
-
 export function sidebar() {
-    const button = document.querySelector('#menu-btn');
-    const panel = document.querySelector('#sidebar');
+  const button = document.querySelector('#menu-btn');
+  const panel = document.querySelector('#sidebar');
+  if (!button || !panel) return;
 
-    if (!button || !panel) {
-        console.error('Menu button or sidebar not found');
-        return;
-    }
+  const backdrop = document.createElement('button');
+  backdrop.type = 'button';
+  backdrop.className = 'sidebar-backdrop';
+  backdrop.setAttribute('aria-label', 'Close navigation menu');
+  panel.before(backdrop);
 
-    const closeMenu = () => {
-        panel.classList.remove('open');
-        button.setAttribute('aria-expanded', 'false');
-    };
-
+  const closeMenu = () => {
+    panel.classList.remove('open');
+    backdrop.classList.remove('open');
     button.setAttribute('aria-expanded', 'false');
-
-    button.addEventListener('click', () => {
-        const isOpen = panel.classList.toggle('open');
-        button.setAttribute('aria-expanded', String(isOpen));
-    });
-
-    // Close after clicking a sidebar link
-    panel.addEventListener('click', (event) => {
-        if (event.target.closest('a')) {
-            closeMenu();
-        }
-    });
-
-    // Close when clicking outside
-    document.addEventListener('click', (event) => {
-        if (
-            panel.classList.contains('open') &&
-            !panel.contains(event.target) &&
-            !button.contains(event.target)
-        ) {
-            closeMenu();
-        }
-    });
-
-    // Close with Escape
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') {
-            closeMenu();
-        }
-    });
+  };
+  button.addEventListener('click', () => {
+    const open = panel.classList.toggle('open');
+    backdrop.classList.toggle('open', open);
+    button.setAttribute('aria-expanded', String(open));
+  });
+  backdrop.addEventListener('click', closeMenu);
+  panel.addEventListener('click', event => {
+    if (event.target.closest('a')) closeMenu();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeMenu();
+  });
 }

@@ -1,1 +1,107 @@
-import {nav} from './components/nav.js';import {sidebar} from './components/sidebar.js';import {IDB} from './idb.js';import {flush} from './sync.js';import {quickadd} from './features/quickadd.js';import {palette} from './features/palette.js';const names=['tasks','syllabus','visuals','profile','reviews','plan','exams','calendar','settings','help'];const views=Object.fromEntries(await Promise.all(names.map(async n=>[n,await import(`./views/${n}.js`)])));async function route(){const name=(location.hash.slice(2)||'tasks').split('/')[0];const v=views[name]||views.tasks;const c=document.querySelector('#view-container');c.innerHTML='';await v.render(c);document.querySelectorAll('[data-route]').forEach(a=>a.classList.toggle('active',a.dataset.route===name))}window.addEventListener('hashchange',route);nav();sidebar();quickadd();palette();await IDB.init();flush();if(!location.hash)location.hash='#/tasks';else route();if('serviceWorker'in navigator)navigator.serviceWorker.register('/static/sw.js',{scope:'/'});document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelector('#modal-root').innerHTML='';if(!['INPUT','TEXTAREA'].includes(document.activeElement.tagName)&&['1','2','3','4'].includes(e.key))location.hash='#/'+['tasks','syllabus','visuals','profile'][Number(e.key)-1]});
+import { nav, activateNav } from './components/nav.js';
+import { sidebar } from './components/sidebar.js';
+import { IDB } from './idb.js';
+import { flush } from './sync.js';
+import { api } from './api.js';
+import { quickadd } from './features/quickadd.js';
+import { palette } from './features/palette.js';
+import { toast } from './components/toast.js';
+import { applyTheme } from './components/theme.js';
+
+const viewNames = [
+  'tasks', 'syllabus', 'visuals', 'profile', 'reviews',
+  'plan', 'exams', 'calendar', 'settings', 'help'
+];
+const views = Object.fromEntries(
+  await Promise.all(viewNames.map(async name => [
+    name,
+    await import(`./views/${name}.js`)
+  ]))
+);
+
+let activeView;
+let installPrompt;
+
+async function route() {
+  const requested = (location.hash.slice(2) || 'tasks').split('/')[0];
+  const name = viewNames.includes(requested) ? requested : 'tasks';
+  activeView = name;
+  activateNav(name);
+  const container = document.querySelector('#view-container');
+  container.innerHTML = '<div class="skeleton skeleton-title"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div>';
+  try {
+    await views[name].render(container);
+  } catch (error) {
+    container.innerHTML = '<section class="card empty-state"><h2>This view could not load</h2><p class="muted"></p><button class="button button-quiet" data-retry>Try again</button></section>';
+    container.querySelector('.muted').textContent = error.message;
+    container.querySelector('[data-retry]').addEventListener('click', route);
+  }
+  container.focus({ preventScroll: true });
+}
+
+async function setupApp() {
+  nav();
+  sidebar();
+  quickadd();
+  palette();
+  await IDB.init();
+
+  try {
+    const data = await api('/api/settings');
+    applyTheme(data.settings.theme || 'auto');
+    const sidebarProfile = document.querySelector('#sidebar-progress');
+    const profile = await api('/api/profile');
+    sidebarProfile.innerHTML = `<span>Level ${profile.level}</span><span>${profile.xp_total} XP</span>`;
+  } catch (error) {
+    applyTheme('auto');
+    if (error.status === 401) toast('Enter your Web Lock key in Settings to sync Maya.');
+  }
+
+  window.addEventListener('hashchange', route);
+  window.addEventListener('maya:refresh', () => {
+    if (activeView) route();
+  });
+  if (!location.hash) location.hash = '#/tasks';
+  else await route();
+
+  try {
+    const result = await api('/api/plan/replan', { method: 'POST', body: '{}' });
+    if (result.crunch && result.explanation) toast(result.explanation);
+  } catch (error) {
+    if (error.status === 401) toast('Enter your Web Lock key in Settings to sync Maya.');
+  }
+  flush();
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js', { scope: '/' }).catch(() => {
+      toast('Offline support could not start. Reload Maya when you are online.');
+    });
+  }
+}
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') document.querySelector('#modal-root').replaceChildren();
+  if (
+    !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)
+    && ['1', '2', '3', '4'].includes(event.key)
+  ) {
+    location.hash = `#/${['tasks', 'syllabus', 'visuals', 'profile'][Number(event.key) - 1]}`;
+  }
+});
+
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  installPrompt = event;
+  document.querySelector('#install-banner').hidden = false;
+});
+document.querySelector('[data-install]').addEventListener('click', async () => {
+  if (!installPrompt) return;
+  await installPrompt.prompt();
+  installPrompt = null;
+  document.querySelector('#install-banner').hidden = true;
+});
+document.querySelector('[data-dismiss]').addEventListener('click', () => {
+  document.querySelector('#install-banner').hidden = true;
+});
+
+setupApp();
