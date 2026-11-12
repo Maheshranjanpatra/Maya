@@ -23,7 +23,7 @@ port or `MAX_UPLOAD_MB` to change the upload size limit.
 
 ## Gemini features
 
-Maya uses Google's Gemini 2.0 Flash for syllabus extraction, topic
+Maya uses Google's Gemini 3.6 Flash for syllabus extraction, topic
 explanations, flashcards, and natural-language quick add. The app works without
 an API key; AI actions explain how to add one when needed. Add your key in
 **Settings**. It is stored in this browser and sent with a request only when

@@ -72,7 +72,7 @@ def upload():
     except ValueError as error:
         return _error(str(error))
     except AIProviderError as error:
-        logger.warning("Gemini syllabus extraction failed: %s", error)
+        logger.exception("Gemini syllabus extraction failed: %s", error)
         return _error(str(error), 503)
     except Exception:
         logger.exception("Unexpected error during syllabus extraction")

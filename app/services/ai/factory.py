@@ -5,4 +5,4 @@ def get_provider(key):
 
     from .gemini import GeminiProvider
 
-    return GeminiProvider(key, "gemini-2.0-flash")
+    return GeminiProvider(key, "gemini-3.6-flash")

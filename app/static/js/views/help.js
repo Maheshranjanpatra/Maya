@@ -6,7 +6,7 @@ const sections = [
   ['Work through today', 'Tasks are small study actions. Complete them for XP, use Focus for a task-linked Pomodoro, snooze or skip with a reason, and use the search and filters to find work.'],
   ['Stay on top of reviews', 'Completing a Read task creates revision tasks for one, three, and seven days later. The Reviews view also uses four recall grades to adjust future review intervals.'],
   ['Reschedule a plan', 'Open Plan and drag a task to another day. On touch screens, use the task’s Move button. A task that cannot fit remains visible instead of disappearing.'],
-  ['Set up Gemini', 'Add your own Gemini API key in Settings. Maya uses Gemini 2.0 Flash for extraction, explanations, flashcards, and natural-language quick add. Without a key, all non-AI features still work.'],
+  ['Set up Gemini', 'Add your own Gemini API key in Settings. Maya uses Gemini 3.6 Flash for extraction, explanations, flashcards, and natural-language quick add. Without a key, all non-AI features still work.'],
   ['Offline and backup', 'Your study data is saved in this browser with IndexedDB, so planning, tasks, and progress remain available offline. Use Settings to export an ICS calendar or a full JSON backup.'],
   ['Keyboard shortcuts', 'Press Ctrl/Cmd+K to open the command palette. Keys 1–4 open Tasks, Syllabus, Visuals, and Profile when you are not typing in a field. Press Escape to close a sheet or palette.'],
   ['Privacy', 'Maya does not upload or sync study data. Your records stay in this browser on this device. When you request an AI action, only the content needed for that action is sent to Google Gemini using your key; Maya does not keep a server-side copy.']

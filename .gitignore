@@ -1,3 +1,43 @@
-node_modules/
+# Environment / secrets
 .env
+.env.*
+*.pem
+*.key
+
+# Python virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build / distribution
 dist/
+build/
+*.egg-info/
+*.egg
+
+# Node (if applicable)
+node_modules/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/   

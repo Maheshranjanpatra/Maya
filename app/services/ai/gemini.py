@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+from pydantic import ValidationError
+
 from .base import AIProvider, AIProviderError
 
 
@@ -53,11 +55,20 @@ class GeminiProvider(AIProvider):
                 image_mime_type,
                 json_mode=True,
             )
-            data = json.loads(raw)
-            return schema.model_validate(data) if schema else data
+        except AIProviderError:
+            raise
         except Exception as error:
             raise AIProviderError(
-                "Gemini could not extract valid syllabus data. Try clearer text or a sharper scan."
+                "Gemini request failed. Check your API key, model access, and quota."
+            ) from error
+
+        try:
+            data = json.loads(raw)
+            return schema.model_validate(data) if schema else data
+        except (json.JSONDecodeError, ValidationError) as error:
+            raise AIProviderError(
+                "Gemini returned data that did not match the expected JSON structure. "
+                "Try clearer input or a sharper scan."
             ) from error
 
     async def complete_text(
