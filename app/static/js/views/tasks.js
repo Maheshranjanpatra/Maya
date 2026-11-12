@@ -49,7 +49,7 @@ export async function render(container) {
   } catch (error) {
     taskCache = await IDB.getAllTasks();
     if (!taskCache.length) {
-      container.querySelector('#task-list').innerHTML = `<article class="card empty-state"><h2>Tasks are unavailable offline</h2><p>Reconnect to load your study plan. Saved changes will sync automatically.</p></article>`;
+      container.querySelector('#task-list').innerHTML = `<article class="card empty-state"><h2>Tasks could not be loaded</h2><p>Your local study data could not be read. Reload Maya and try again.</p></article>`;
       return;
     }
     subjectsCache = (await IDB.getAllSubjects()).filter(subject => !subject.archived);
@@ -145,7 +145,6 @@ async function setTaskStatus(container, task, status, notify = false) {
   const oldStatus = task.status;
   task.status = status;
   task.is_due_revision = false;
-  await IDB.putTask(task);
   drawTasks(container);
   try {
     await queuedPatch(`/api/tasks/${task.id}`, { status }, () => {});

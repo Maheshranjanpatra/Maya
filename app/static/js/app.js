@@ -1,7 +1,7 @@
 import { nav, activateNav } from './components/nav.js';
 import { sidebar } from './components/sidebar.js';
 import { IDB } from './idb.js';
-import { flush } from './sync.js';
+import { applyPendingLocalWrites, updateStatus } from './sync.js';
 import { api } from './api.js';
 import { quickadd } from './features/quickadd.js';
 import { palette } from './features/palette.js';
@@ -45,6 +45,11 @@ async function setupApp() {
   quickadd();
   palette();
   await IDB.init();
+  try {
+    await applyPendingLocalWrites();
+  } catch (error) {
+    toast(`A locally saved change could not be applied: ${error.message}`);
+  }
 
   try {
     const data = await api('/api/settings');
@@ -54,7 +59,7 @@ async function setupApp() {
     sidebarProfile.innerHTML = `<span>Level ${profile.level}</span><span>${profile.xp_total} XP</span>`;
   } catch (error) {
     applyTheme('auto');
-    if (error.status === 401) toast('Enter your Web Lock key in Settings to sync Maya.');
+    toast(error.message);
   }
 
   window.addEventListener('hashchange', route);
@@ -68,12 +73,12 @@ async function setupApp() {
     const result = await api('/api/plan/replan', { method: 'POST', body: '{}' });
     if (result.crunch && result.explanation) toast(result.explanation);
   } catch (error) {
-    if (error.status === 401) toast('Enter your Web Lock key in Settings to sync Maya.');
+    toast(error.message);
   }
-  flush();
+  updateStatus();
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/static/sw.js', { scope: '/' }).catch(() => {
+    navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch(() => {
       toast('Offline support could not start. Reload Maya when you are online.');
     });
   }

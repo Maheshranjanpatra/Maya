@@ -15,18 +15,20 @@ pip install -r requirements.txt
 python run.py
 ```
 
-Open [http://localhost:8000](http://localhost:8000). Maya stores its SQLite
-database at `data/maya.db` by default. Set `DATABASE_PATH` to use another
-location, `PORT` to change the server port, or `MAX_UPLOAD_MB` to change the
-upload size limit.
+Open [http://localhost:8000](http://localhost:8000). Flask serves the app and
+its optional AI endpoints; it does not store study records. Subjects, tasks,
+plans, settings, progress, and the Gemini key are stored in the browser's
+IndexedDB on the device where Maya is opened. Set `PORT` to change the server
+port or `MAX_UPLOAD_MB` to change the upload size limit.
 
 ## Gemini features
 
 Maya uses Google's Gemini 2.0 Flash for syllabus extraction, topic
 explanations, flashcards, and natural-language quick add. The app works without
-an API key; AI actions explain how to add one when needed. Add a key in
-**Settings**, or set `GEMINI_API_KEY` before starting Maya. The key is stored
-locally and is never sent to another AI provider.
+an API key; AI actions explain how to add one when needed. Add your key in
+**Settings**. It is stored in this browser and sent with a request only when
+you choose an AI action. Only the content needed for that action is sent to
+Google Gemini; Maya's server does not save it.
 
 ## Using Maya
 
@@ -42,10 +44,10 @@ locally and is never sent to another AI provider.
    backup.
 
 The interface is an installable PWA. Its application shell is cached for
-offline access, and supported queued task changes sync when the app reconnects.
-All study data remains in Maya's local SQLite database. A custom Web Lock key
-can also be set in Settings to require the `X-Web-Lock-Key` header on API
-requests.
+offline access, and study data remains in IndexedDB on that device. Browser
+storage is tied to the app's origin and browser profile; clearing browser data
+can erase it. Use Settings to download a JSON backup regularly or restore one
+on this device. Maya does not sync data between devices.
 
 ## Development checks
 

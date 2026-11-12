@@ -7,9 +7,9 @@ const sections = [
   ['Stay on top of reviews', 'Completing a Read task creates revision tasks for one, three, and seven days later. The Reviews view also uses four recall grades to adjust future review intervals.'],
   ['Reschedule a plan', 'Open Plan and drag a task to another day. On touch screens, use the task’s Move button. A task that cannot fit remains visible instead of disappearing.'],
   ['Set up Gemini', 'Add your own Gemini API key in Settings. Maya uses Gemini 2.0 Flash for extraction, explanations, flashcards, and natural-language quick add. Without a key, all non-AI features still work.'],
-  ['Offline and backup', 'The app shell and saved tasks remain available offline. Changes that can be queued are stored in IndexedDB and sent to the local SQLite app after reconnecting. Use Settings to export an ICS calendar or a full JSON backup.'],
+  ['Offline and backup', 'Your study data is saved in this browser with IndexedDB, so planning, tasks, and progress remain available offline. Use Settings to export an ICS calendar or a full JSON backup.'],
   ['Keyboard shortcuts', 'Press Ctrl/Cmd+K to open the command palette. Keys 1–4 open Tasks, Syllabus, Visuals, and Profile when you are not typing in a field. Press Escape to close a sheet or palette.'],
-  ['Privacy', 'Maya has no accounts or cloud database. Your local SQLite database stays on this installation. When you use an AI feature, the relevant syllabus or topic content is sent to Google Gemini using your key.']
+  ['Privacy', 'Maya does not upload or sync study data. Your records stay in this browser on this device. When you request an AI action, only the content needed for that action is sent to Google Gemini using your key; Maya does not keep a server-side copy.']
 ];
 
 export async function render(container) {
@@ -17,6 +17,6 @@ export async function render(container) {
     <header class="view-heading"><div><p class="eyebrow">A few helpful pointers</p><h1>Help</h1><p>How to get the most out of Maya.</p></div></header>
     <section class="view-stack">
       ${sections.map(([title, copy]) => `<details class="card help-item"><summary>${escapeHTML(title)}</summary><p class="muted">${escapeHTML(copy)}</p></details>`).join('')}
-      <article class="card"><h2>Need to configure the app?</h2><p class="muted">Set study capacity, themes, Gemini, and your optional Web Lock in Settings.</p><a class="button button-quiet" href="#/settings">Open Settings</a></article>
+      <article class="card"><h2>Need to configure the app?</h2><p class="muted">Set study capacity, themes, and your Gemini key in Settings.</p><a class="button button-quiet" href="#/settings">Open Settings</a></article>
     </section>`;
 }

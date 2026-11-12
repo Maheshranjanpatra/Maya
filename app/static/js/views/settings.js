@@ -30,15 +30,11 @@ export async function render(container) {
         <label class="inline-check"><input id="clear-gemini" type="checkbox">Remove the saved key</label>
         <p><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Get a Gemini API key</a></p>
       </article>
-      <article class="card"><p class="eyebrow">Local protection</p><h2>Web Lock</h2><p class="muted" id="lock-status"></p>
-        <label>New Web Lock key<input id="web-lock-key" type="password" autocomplete="new-password" placeholder="Choose a private key for API requests"></label>
-        <label class="inline-check"><input id="clear-lock" type="checkbox">Remove the Web Lock</label>
-      </article>
       <article class="card"><p class="eyebrow">Your data stays yours</p><h2>Export and backup</h2><p class="muted">Download a calendar file or a complete JSON backup. Restoring replaces Maya's study data on this device.</p>
         <div class="split-actions"><button class="button button-quiet" id="export-ics">Export calendar (.ics)</button><button class="button button-quiet" id="export-backup">Download JSON backup</button></div>
         <label>Restore from a Maya backup<input id="restore-file" type="file" accept="application/json,.json"></label>
       </article>
-      <article class="card"><p class="eyebrow">About</p><h2>Maya is local-first</h2><p class="muted">No account, no cloud database, and no other AI provider. Your database and settings live on this installation. Your syllabus is sent to Gemini only when you request AI extraction or study help.</p></article>
+      <article class="card"><p class="eyebrow">About</p><h2>Maya is local-first</h2><p class="muted">Your study data and settings are stored in this browser on this device. They are not uploaded or synced. Only content you submit for an AI action is sent to Google Gemini, and Gemini responses are not saved on Maya's server.</p></article>
     </div>`;
   try {
     const [result, blackouts] = await Promise.all([api('/api/settings'), api('/api/blackouts')]);
@@ -46,9 +42,6 @@ export async function render(container) {
     container.querySelector('#gemini-status').textContent = result.active_provider
       ? 'Gemini is configured and ready.'
       : 'Add a key to enable extraction, explanations, flashcards, and natural-language quick add.';
-    container.querySelector('#lock-status').textContent = result.web_lock_enabled
-      ? 'Web Lock is enabled. Enter your current key in this browser before changing it.'
-      : 'Optional: set a key to require X-Web-Lock-Key on API requests.';
     drawBlackouts(container, blackouts);
     bindSettings(container);
   } catch (error) {
@@ -123,15 +116,12 @@ function bindSettings(container) {
   container.querySelector('#gemini-key').addEventListener('keydown', event => {
     if (event.key === 'Enter') saveSecrets(container);
   });
-  container.querySelector('#web-lock-key').addEventListener('keydown', event => {
-    if (event.key === 'Enter') saveSecrets(container);
-  });
   const saveButton = document.createElement('button');
   saveButton.type = 'button';
   saveButton.className = 'button';
   saveButton.textContent = 'Save keys';
   saveButton.id = 'save-keys';
-  container.querySelector('#web-lock-key').closest('.card').append(saveButton);
+  container.querySelector('#gemini-key').closest('.card').append(saveButton);
   saveButton.onclick = () => saveSecrets(container);
 }
 
@@ -142,44 +132,58 @@ function setTheme(theme) {
 async function saveSecrets(container) {
   const gemini = container.querySelector('#gemini-key').value.trim();
   const removeGemini = container.querySelector('#clear-gemini').checked;
-  const lock = container.querySelector('#web-lock-key').value;
-  const removeLock = container.querySelector('#clear-lock').checked;
   const data = {};
   if (gemini || removeGemini) data.gemini_api_key = removeGemini ? '' : gemini;
-  if (lock || removeLock) data.web_lock_key = removeLock ? '' : lock;
   if (!Object.keys(data).length) {
-    toast('Enter a key or choose a remove option.');
+    toast('Enter a key or choose the remove option.');
     return;
   }
   try {
     await api('/api/settings', { method: 'PATCH', body: JSON.stringify(data) });
-    if ('web_lock_key' in data) {
-      if (data.web_lock_key) localStorage.setItem('maya-lock-key', data.web_lock_key);
-      else localStorage.removeItem('maya-lock-key');
-    }
     container.querySelector('#gemini-key').value = '';
-    container.querySelector('#web-lock-key').value = '';
     container.querySelector('#clear-gemini').checked = false;
-    container.querySelector('#clear-lock').checked = false;
-    toast('Keys saved on this device.');
+    toast('Gemini key saved on this device.');
     window.dispatchEvent(new CustomEvent('maya:refresh'));
   } catch (error) { toast(error.message); }
 }
 
 async function download(url, filename) {
   try {
-    const response = await fetch(url, { headers: { 'X-Web-Lock-Key': localStorage.getItem('maya-lock-key') || '' } });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data.error || `Download failed (${response.status}).`);
-    }
-    const blob = await response.blob();
+    const blob = url.endsWith('/ics')
+      ? await makeCalendar()
+      : new Blob([JSON.stringify(await api('/api/export/backup'), null, 2)], { type: 'application/json' });
     const anchor = document.createElement('a');
     anchor.href = URL.createObjectURL(blob);
     anchor.download = filename;
     anchor.click();
     URL.revokeObjectURL(anchor.href);
   } catch (error) { toast(error.message); }
+}
+
+async function makeCalendar() {
+  const [tasks, exams] = await Promise.all([
+    api('/api/tasks/all'),
+    api('/api/exams')
+  ]);
+  const escape = value => String(value || '').replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\\;').replace(/\n/g, '\\n');
+  const events = [
+    ...tasks.filter(task => task.scheduled_date).map(task => ({
+      date: task.scheduled_date.replaceAll('-', ''),
+      title: task.title,
+      description: `${task.subject_name} · ${task.est_minutes} minutes`
+    })),
+    ...exams.map(exam => ({
+      date: exam.exam_date.replaceAll('-', ''),
+      title: `${exam.subject_name} ${exam.exam_type}`,
+      description: `${exam.weightage}% weight`
+    }))
+  ];
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Maya//Study Planner//EN'];
+  for (const [index, item] of events.entries()) {
+    lines.push('BEGIN:VEVENT', `UID:maya-${index}-${item.date}@local`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}`, `DTSTART;VALUE=DATE:${item.date}`, `SUMMARY:${escape(item.title)}`, `DESCRIPTION:${escape(item.description)}`, 'END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return new Blob([lines.join('\r\n')], { type: 'text/calendar' });
 }
 
 async function restoreBackup(event, container) {
@@ -193,19 +197,10 @@ async function restoreBackup(event, container) {
     event.target.value = '';
     return;
   }
-  const sheet = showSheet(`<div class="sheet-handle" aria-hidden="true"></div><h2>Replace local study data?</h2><p class="muted">This restores the selected Maya backup over the current local subjects, tasks, exams, and progress. Your API keys and Web Lock stay unchanged.</p><div class="sheet-actions"><button class="button button-quiet" data-close-sheet>Cancel</button><button class="button button-danger" id="confirm-restore">Restore backup</button></div>`);
+  const sheet = showSheet(`<div class="sheet-handle" aria-hidden="true"></div><h2>Replace local study data?</h2><p class="muted">This restores the selected Maya backup over the current study data on this device. Your Gemini key stays unchanged.</p><div class="sheet-actions"><button class="button button-quiet" data-close-sheet>Cancel</button><button class="button button-danger" id="confirm-restore">Restore backup</button></div>`);
   sheet.root.querySelector('#confirm-restore').onclick = async () => {
     try {
-      const response = await fetch('/api/import/backup', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Web-Lock-Key': localStorage.getItem('maya-lock-key') || ''
-        },
-        body: JSON.stringify(backup)
-      });
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error(result.error || `Restore failed (${response.status}).`);
+      await api('/api/import/backup', { method: 'POST', body: JSON.stringify(backup) });
       sheet.close();
       toast('Backup restored.');
       window.dispatchEvent(new CustomEvent('maya:refresh'));

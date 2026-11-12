@@ -15,7 +15,7 @@ export async function render(container) {
           <label>Subject name (optional)<input name="subject_name" maxlength="120" placeholder="e.g. Physics II"></label>
           <label class="file-drop">PDF, DOCX, image, or text file<input name="file" type="file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png"></label>
           <label class="span-2">Or paste syllabus text<textarea name="pasted_text" placeholder="Paste units, topics, marks, and any known prerequisites"></textarea></label>
-          <div class="span-2"><button class="button" type="submit">Extract with Gemini</button><p class="hint">Your Gemini key stays in this local Maya installation. Scanned PDFs and images are sent to Gemini vision.</p></div>
+          <div class="span-2"><button class="button" type="submit">Extract with Gemini</button><p class="hint">Your Gemini key stays in this browser. The syllabus content is sent to Google only when you request extraction.</p></div>
         </form>
         <p id="upload-status" class="status-message" hidden aria-live="polite"></p>
         <div id="extraction-review"></div>
