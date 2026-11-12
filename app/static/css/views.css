@@ -575,6 +575,129 @@
   font-size: .84rem;
 }
 
+.extraction-status {
+  position: relative;
+  display: grid;
+  min-height: 132px;
+  place-items: center;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--primary-soft) 72%, var(--surface));
+  text-align: center;
+}
+
+.extract-label,
+.extract-vortex {
+  grid-area: 1 / 1;
+}
+
+.extract-label {
+  z-index: 1;
+  color: var(--primary);
+  font-family: "Segoe Script", "Brush Script MT", cursive;
+  font-size: 1.35rem;
+  font-weight: 600;
+  transform-origin: center;
+}
+
+.extract-label--swallow {
+  animation: extract-label-swallow .78s cubic-bezier(.58, 0, .98, .28) both;
+}
+
+.extract-label--hidden {
+  opacity: 0;
+  transform: scale(0);
+  filter: blur(12px);
+}
+
+.extract-label--emerge {
+  font-size: clamp(1.65rem, 7vw, 2.25rem);
+  font-weight: 800;
+  animation: extract-label-emerge .62s cubic-bezier(.16, 1.35, .4, 1) both;
+}
+
+.extract-vortex {
+  position: relative;
+  width: 96px;
+  height: 88px;
+  opacity: 0;
+  perspective: 320px;
+  transform: rotateX(65deg) scale(.52);
+  transition: opacity .2s ease, transform .3s ease;
+}
+
+.extract-vortex i {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 16deg,
+    transparent 0 28deg,
+    color-mix(in srgb, var(--primary) 48%, white) 58deg 128deg,
+    transparent 164deg 220deg,
+    var(--primary) 253deg 298deg,
+    transparent 330deg
+  );
+  -webkit-mask: radial-gradient(ellipse at center, transparent 0 17%, #000 24% 58%, transparent 72%);
+  mask: radial-gradient(ellipse at center, transparent 0 17%, #000 24% 58%, transparent 72%);
+  transform: rotateX(65deg);
+  animation: cyclone-spin .62s linear infinite;
+}
+
+.extract-vortex i + i {
+  inset: 12px;
+  opacity: .7;
+  background: conic-gradient(
+    from 170deg,
+    transparent 0 38deg,
+    var(--accent) 64deg 126deg,
+    transparent 158deg 236deg,
+    color-mix(in srgb, var(--primary) 45%, white) 268deg 314deg,
+    transparent 342deg
+  );
+  animation-name: cyclone-spin-reverse;
+  animation-duration: .46s;
+}
+
+.is-vortex .extract-vortex {
+  opacity: 1;
+  transform: rotateX(65deg) scale(1);
+}
+
+.is-emerging .extract-vortex {
+  opacity: 0;
+  transform: rotateX(65deg) scale(1.7);
+  transition-duration: .58s;
+}
+
+@keyframes extract-label-swallow {
+  to {
+    opacity: 0;
+    filter: blur(12px);
+    transform: rotate(720deg) scale(0);
+  }
+}
+
+@keyframes extract-label-emerge {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: scale(.08) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes cyclone-spin {
+  to { transform: rotateX(65deg) rotateZ(360deg); }
+}
+
+@keyframes cyclone-spin-reverse {
+  to { transform: rotateX(65deg) rotateZ(-360deg); }
+}
+
 @media (min-width: 620px) {
   .grid-3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));

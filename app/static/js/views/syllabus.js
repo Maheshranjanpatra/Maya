@@ -18,7 +18,7 @@ export async function render(container) {
           <label class="span-2">Or paste syllabus text<textarea name="pasted_text" placeholder="Paste units, topics, marks, and any known prerequisites"></textarea></label>
           <div class="span-2"><button class="button" type="submit">Extract with Gemini</button><p class="hint">Your Gemini key stays in this browser. The syllabus content is sent to Google only when you request extraction.</p></div>
         </form>
-        <p id="upload-status" class="status-message" hidden aria-live="polite"></p>
+        <p id="upload-status" class="status-message" hidden role="status" aria-live="polite"></p>
         <div id="extraction-review"></div>
       </article>
       <div id="subject-count" class="status-message" hidden></div>
@@ -115,27 +115,86 @@ async function analyzeSyllabus(event, container) {
   event.preventDefault();
   const form = event.currentTarget;
   const status = container.querySelector('#upload-status');
+  const submitButton = form.querySelector('[type="submit"]');
   const file = form.elements.file.files[0];
   const pasted = form.elements.pasted_text.value.trim();
   if (!file && !pasted) {
     status.hidden = false;
+    status.classList.remove('danger-message', 'extraction-status');
     status.textContent = 'Choose a file or paste syllabus text first.';
     return;
   }
+  submitButton.disabled = true;
+  form.setAttribute('aria-busy', 'true');
   status.hidden = false;
-  status.textContent = 'Gemini is reading your syllabus…';
-  const data = new FormData(form);
-  data.delete('file');
-  if (file) data.append('file', file);
+  status.classList.remove('danger-message');
+  const animation = startExtractionAnimation(status);
   try {
+    const data = new FormData(form);
+    data.delete('file');
+    if (file) data.append('file', file);
     const result = await api('/api/upload', { method: 'POST', body: data });
+    await animation.finish();
     draft = result.extraction;
     renderReview(container, result.warnings || []);
     status.textContent = 'Review the extracted structure below. Nothing has been saved yet.';
   } catch (error) {
+    animation.cancel();
     status.textContent = error.message;
     status.classList.add('danger-message');
+  } finally {
+    submitButton.disabled = false;
+    form.removeAttribute('aria-busy');
   }
+}
+
+function startExtractionAnimation(status) {
+  status.classList.add('extraction-status');
+  status.innerHTML = '<span class="extract-label extract-label--swallow">Extracting...</span><span class="extract-vortex" aria-hidden="true"><i></i><i></i></span>';
+  const label = status.querySelector('.extract-label');
+  let resolveSwallow;
+  let swallowed = false;
+  let swallowTimer;
+  const swallow = new Promise(resolve => {
+    resolveSwallow = resolve;
+  });
+  const finishSwallow = () => {
+    if (swallowed) return;
+    swallowed = true;
+    clearTimeout(swallowTimer);
+    label.className = 'extract-label extract-label--hidden';
+    status.classList.add('is-vortex');
+    resolveSwallow();
+  };
+  label.addEventListener('animationend', event => {
+    if (event.animationName === 'extract-label-swallow') finishSwallow();
+  });
+  swallowTimer = setTimeout(finishSwallow, 900);
+
+  return {
+    finish: async () => {
+      await swallow;
+      status.classList.remove('is-vortex');
+      status.classList.add('is-emerging');
+      label.textContent = 'Extracted!';
+      label.className = 'extract-label extract-label--emerge';
+      await new Promise(resolve => {
+        const timer = setTimeout(resolve, 700);
+        label.addEventListener('animationend', event => {
+          if (event.animationName === 'extract-label-emerge') {
+            clearTimeout(timer);
+            resolve();
+          }
+        }, { once: true });
+      });
+      status.classList.remove('extraction-status', 'is-emerging');
+    },
+    cancel: () => {
+      clearTimeout(swallowTimer);
+      status.classList.remove('extraction-status', 'is-vortex', 'is-emerging');
+      status.classList.remove('danger-message');
+    }
+  };
 }
 
 function renderReview(container, warnings = []) {
