@@ -95,7 +95,7 @@ export const IDB = {
     for (const store of STORES.filter(name => name !== 'queue')) {
       result[store] = await this.all(store);
     }
-    result.settings = result.settings.map(({ gemini_api_key, web_lock_key, ...item }) => item);
+    result.settings = result.settings.map(({ ai_api_key, gemini_api_key, web_lock_key, ...item }) => item);
     return result;
   },
 

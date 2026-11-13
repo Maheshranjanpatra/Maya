@@ -27,25 +27,37 @@ export async function render(container) {
         <form id="blackout-form" class="field-row"><label>Date<input type="date" name="date" required></label><label>Reason (optional)<input name="reason" maxlength="200"></label><button class="button">Add day</button></form>
         <div id="blackout-list" class="view-stack"></div>
       </article>
-      <article class="card"><p class="eyebrow">AI tools</p><h2>Gemini API key</h2><p class="muted" id="gemini-status"></p>
-        <div class="api-key-setting"><label for="gemini-key">Gemini API key</label><div class="api-key-field"><input id="gemini-key" type="password" autocomplete="off" placeholder="Paste your key from Google AI Studio"><button class="icon-button" id="toggle-gemini-key" type="button" aria-label="Show API key" aria-pressed="false">${ICONS.eye}</button></div></div>
-        <label class="inline-check"><input id="clear-gemini" type="checkbox">Remove the saved key</label>
-        <p><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Get a Gemini API key</a></p>
+      <article class="card"><p class="eyebrow">AI tools</p><h2>AI settings</h2><p class="muted" id="ai-status"></p>
+        <div class="api-key-setting"><label for="ai-key">API key</label><div class="api-key-field"><input id="ai-key" type="password" autocomplete="off" placeholder="Paste your API key"><button class="icon-button" id="toggle-ai-key" type="button" aria-label="Show API key" aria-pressed="false">${ICONS.eye}</button></div></div>
+        <label>Model
+          <select id="ai-model">
+            <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
+            <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
+            <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite</option>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+          </select>
+        </label>
+        <label class="inline-check"><input id="clear-ai-key" type="checkbox">Remove the saved key</label>
+        <p class="hint">Use a key from Google AI Studio. Model availability and usage limits depend on your provider account.</p>
+        <p><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Get an API key from Google AI Studio</a></p>
       </article>
       <article class="card"><p class="eyebrow">Your data stays yours</p><h2>Export and backup</h2><p class="muted">Download a calendar file or a complete JSON backup. Restoring replaces Maya's study data on this device.</p>
         <div class="split-actions"><button class="button button-quiet" id="export-ics">Export calendar (.ics)</button><button class="button button-quiet" id="export-backup">Download JSON backup</button></div>
         <label>Restore from a Maya backup<input id="restore-file" type="file" accept="application/json,.json"></label>
       </article>
-      <article class="card"><p class="eyebrow">About</p><h2>Maya is local-first</h2><p class="muted">Your study data and settings are stored in this browser on this device. They are not uploaded or synced. Only content you submit for an AI action is sent to Google Gemini, and Gemini responses are not saved on Maya's server.</p></article>
+      <article class="card"><p class="eyebrow">About</p><h2>Maya is local-first</h2><p class="muted">Your study data and settings are stored in this browser on this device. They are not uploaded or synced. Only content you submit for an AI action is sent to Google using your key, and AI responses are not saved on Maya's server.</p></article>
     </div>`;
   try {
     const [result, blackouts] = await Promise.all([api('/api/settings'), api('/api/blackouts')]);
     fillSettings(container, result.settings);
     const storedSettings = await IDB.get('settings', 1);
-    container.querySelector('#gemini-key').value = storedSettings?.gemini_api_key || '';
-    container.querySelector('#gemini-status').textContent = result.active_provider
-      ? 'Gemini is ready. Your key is saved in this browser and will be reused automatically.'
-      : 'Add one key to enable extraction, explanations, flashcards, and natural-language quick add. It will be saved in this browser.';
+    container.querySelector('#ai-key').value = storedSettings?.ai_api_key || storedSettings?.gemini_api_key || '';
+    container.querySelector('#ai-model').value = storedSettings?.ai_model || 'gemini-3.6-flash';
+    container.querySelector('#ai-status').textContent = result.api_key_set
+      ? 'Your API key is saved in this browser and will be reused automatically.'
+      : 'Add an API key to enable extraction, explanations, flashcards, and natural-language quick add. It will be saved in this browser.';
     drawBlackouts(container, blackouts);
     bindSettings(container);
   } catch (error) {
@@ -116,8 +128,8 @@ function bindSettings(container) {
   container.querySelector('#export-ics').onclick = () => download('/api/export/ics', 'maya.ics');
   container.querySelector('#export-backup').onclick = () => download('/api/export/backup', 'maya-backup.json');
   container.querySelector('#restore-file').addEventListener('change', event => restoreBackup(event, container));
-  const keyInput = container.querySelector('#gemini-key');
-  const keyToggle = container.querySelector('#toggle-gemini-key');
+  const keyInput = container.querySelector('#ai-key');
+  const keyToggle = container.querySelector('#toggle-ai-key');
   keyToggle.addEventListener('click', () => {
     const visible = keyInput.type === 'password';
     keyInput.type = visible ? 'text' : 'password';
@@ -132,9 +144,9 @@ function bindSettings(container) {
   const saveButton = document.createElement('button');
   saveButton.type = 'button';
   saveButton.className = 'button';
-  saveButton.textContent = 'Save API key';
+  saveButton.textContent = 'Save AI settings';
   saveButton.id = 'save-keys';
-  container.querySelector('#gemini-key').closest('.card').append(saveButton);
+  container.querySelector('#ai-key').closest('.card').append(saveButton);
   saveButton.onclick = () => saveSecrets(container);
 }
 
@@ -143,26 +155,32 @@ function setTheme(theme) {
 }
 
 async function saveSecrets(container) {
-  const gemini = container.querySelector('#gemini-key').value.trim();
-  const removeGemini = container.querySelector('#clear-gemini').checked;
-  const data = {};
-  if (gemini || removeGemini) data.gemini_api_key = removeGemini ? '' : gemini;
-  if (!Object.keys(data).length) {
-    toast('Enter a key or choose the remove option.');
-    return;
+  const apiKey = container.querySelector('#ai-key').value.trim();
+  const removeKey = container.querySelector('#clear-ai-key').checked;
+  const data = { ai_model: container.querySelector('#ai-model').value };
+  if (apiKey || removeKey) {
+    data.ai_api_key = removeKey ? '' : apiKey;
+    data.gemini_api_key = '';
   }
   try {
     await api('/api/settings', { method: 'PATCH', body: JSON.stringify(data) });
-    container.querySelector('#clear-gemini').checked = false;
-    if (removeGemini) {
-      container.querySelector('#gemini-key').value = '';
-      container.querySelector('#gemini-key').type = 'password';
-      const toggle = container.querySelector('#toggle-gemini-key');
+    container.querySelector('#clear-ai-key').checked = false;
+    if (removeKey) {
+      container.querySelector('#ai-key').value = '';
+      container.querySelector('#ai-key').type = 'password';
+      const toggle = container.querySelector('#toggle-ai-key');
       toggle.innerHTML = ICONS.eye;
       toggle.setAttribute('aria-label', 'Show API key');
       toggle.setAttribute('aria-pressed', 'false');
     }
-    toast('Gemini key saved on this device.');
+    const savedKey = apiKey || (!removeKey
+      && container.querySelector('#ai-status').textContent.includes('saved'));
+    container.querySelector('#ai-status').textContent = removeKey
+      ? 'API key removed from this browser.'
+      : savedKey
+        ? 'Your API key is saved in this browser and will be reused automatically.'
+        : 'Model saved. Add an API key to enable AI tools.';
+    toast('AI settings saved on this device.');
     window.dispatchEvent(new CustomEvent('maya:refresh'));
   } catch (error) { toast(error.message); }
 }

@@ -17,18 +17,19 @@ python run.py
 
 Open [http://localhost:8000](http://localhost:8000). Flask serves the app and
 its optional AI endpoints; it does not store study records. Subjects, tasks,
-plans, settings, progress, and the Gemini key are stored in the browser's
+plans, settings, progress, and the AI API key are stored in the browser's
 IndexedDB on the device where Maya is opened. Set `PORT` to change the server
 port or `MAX_UPLOAD_MB` to change the upload size limit.
 
-## Gemini features
+## AI features
 
-Maya uses Google's Gemini 3.6 Flash for syllabus extraction, topic
-explanations, flashcards, and natural-language quick add. The app works without
-an API key; AI actions explain how to add one when needed. Add your key in
-**Settings**. It is stored in this browser and sent with a request only when
-you choose an AI action. Only the content needed for that action is sent to
-Google Gemini; Maya's server does not save it.
+Maya uses Google's Gemini API for syllabus extraction, topic explanations,
+flashcards, and natural-language quick add. Choose the model and add your API
+key in **Settings**. The app works without a key; AI actions explain how to add
+one when needed. The key is stored in this browser and sent with a request only
+when you choose an AI action. Only the content needed for that action is sent
+to Google; Maya's server does not save it. Model availability and usage limits
+depend on your Google AI Studio project and selected model.
 
 ## Using Maya
 

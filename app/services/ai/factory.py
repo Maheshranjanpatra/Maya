@@ -1,8 +1,11 @@
-def get_provider(key):
+DEFAULT_MODEL = "gemini-3.6-flash"
+
+
+def get_provider(key, model=DEFAULT_MODEL):
     key = (key or "").strip()
     if not key:
         return None
 
     from .gemini import GeminiProvider
 
-    return GeminiProvider(key, "gemini-3.6-flash")
+    return GeminiProvider(key, model or DEFAULT_MODEL)

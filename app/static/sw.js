@@ -1,4 +1,4 @@
-const CACHE = 'maya-shell-v9';
+const CACHE = 'maya-shell-v10';
 const SHELL = [
   '/',
   '/static/manifest.json',

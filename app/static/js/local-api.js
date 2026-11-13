@@ -337,10 +337,8 @@ async function dispatch(path, method, options, query) {
   if (path === '/api/settings' && method === 'GET') {
     const current = await settings();
     return {
-      settings: Object.fromEntries(Object.entries(current).filter(([key]) => !['gemini_api_key', 'web_lock_key'].includes(key))),
-      gemini_key_set: Boolean(current.gemini_api_key),
-      active_provider: current.gemini_api_key ? 'Gemini' : null,
-      providers_available: current.gemini_api_key ? ['Gemini'] : []
+      settings: Object.fromEntries(Object.entries(current).filter(([key]) => !['ai_api_key', 'gemini_api_key', 'web_lock_key'].includes(key))),
+      api_key_set: Boolean(current.ai_api_key || current.gemini_api_key)
     };
   }
   if (path === '/api/settings' && method === 'PATCH') {
@@ -587,7 +585,13 @@ async function dispatch(path, method, options, query) {
     const importedSettings = data.settings?.[0] || {};
     await IDB.replaceAll({
       ...data,
-      settings: [{ ...currentSettings, ...importedSettings, gemini_api_key: currentSettings.gemini_api_key, id: 1 }]
+      settings: [{
+        ...currentSettings,
+        ...importedSettings,
+        ai_api_key: currentSettings.ai_api_key,
+        gemini_api_key: currentSettings.gemini_api_key,
+        id: 1
+      }]
     });
     return {};
   }

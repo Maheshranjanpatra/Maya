@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, request
 
 from .ai_parser import Extraction
 from .services.ai.base import AIProviderError
-from .services.ai.factory import get_provider
+from .services.ai.factory import DEFAULT_MODEL, get_provider
 from .services.ai.prompts import (
     EXPLAIN_PROMPT,
     FLASHCARDS_PROMPT,
@@ -27,14 +27,21 @@ def _error(message, status=400):
 
 
 def _api_key():
-    return request.headers.get("X-Gemini-Api-Key", "").strip()
+    return (
+        request.headers.get("X-AI-Api-Key")
+        or request.headers.get("X-Gemini-Api-Key", "")
+    ).strip()
+
+
+def _ai_model():
+    return request.headers.get("X-AI-Model", DEFAULT_MODEL).strip() or DEFAULT_MODEL
 
 
 @ai_bp.post("/upload")
 def upload():
     api_key = _api_key()
     if not api_key:
-        return _error("Add your Gemini API key in Settings to use syllabus extraction.", 503)
+        return _error("Add your API key in Settings to use syllabus extraction.", 503)
 
     file = request.files.get("file")
     pasted_text = request.form.get("pasted_text", "").strip()
@@ -55,7 +62,7 @@ def upload():
             context += f"\n\nAdditional syllabus text:\n{pasted_text}"
 
         with provider_lock:
-            provider = get_provider(api_key)
+            provider = get_provider(api_key, _ai_model())
             extraction = asyncio.run(
                 provider.complete_json(
                     SYLLABUS_EXTRACT_PROMPT,
@@ -76,14 +83,14 @@ def upload():
         return _error(str(error), 503)
     except Exception:
         logger.exception("Unexpected error during syllabus extraction")
-        return _error("Syllabus extraction failed. Check the file and Gemini API key.", 503)
+        return _error("Syllabus extraction failed. Check the file and AI settings.", 503)
 
 
 @ai_bp.post("/ai/quickadd")
 def quickadd():
     api_key = _api_key()
     if not api_key:
-        return _error("Add your Gemini API key in Settings to use quick add.", 503)
+        return _error("Add your API key in Settings to use quick add.", 503)
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
     if not text:
@@ -94,7 +101,7 @@ def quickadd():
     )
     try:
         with provider_lock:
-            provider = get_provider(api_key)
+            provider = get_provider(api_key, _ai_model())
             result = asyncio.run(provider.complete_json(prompt, text, None))
         return jsonify(ok=True, data=result)
     except AIProviderError as error:
@@ -112,7 +119,7 @@ def explain():
         return _error("Add a key to use topic explanations.", 503)
     try:
         with provider_lock:
-            provider = get_provider(api_key)
+            provider = get_provider(api_key, _ai_model())
             text = asyncio.run(
                 provider.complete_text(
                     EXPLAIN_PROMPT, f"Topic: {topic['name']}\nNotes: {topic.get('notes', '')}"
@@ -134,7 +141,7 @@ def flashcards():
         return _error("Add a key to create flashcards.", 503)
     try:
         with provider_lock:
-            provider = get_provider(api_key)
+            provider = get_provider(api_key, _ai_model())
             result = asyncio.run(
                 provider.complete_json(
                     FLASHCARDS_PROMPT,

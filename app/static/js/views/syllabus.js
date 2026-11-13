@@ -11,12 +11,12 @@ export async function render(container) {
   container.innerHTML = `
     <header class="view-heading"><div><p class="eyebrow">Build your study map</p><h1>Syllabus</h1><p>Subjects, units, topics, and the work behind them.</p></div><button id="new-subject" class="button button-quiet">Add subject</button></header>
     <section class="view-stack">
-      <article class="card"><div class="card-heading"><div><h2>Bring in your syllabus</h2><p class="muted">Gemini extracts a draft. You review every item before it is saved.</p></div><span class="pill pill-primary">Review first</span></div>
+      <article class="card"><div class="card-heading"><div><h2>Bring in your syllabus</h2><p class="muted">Your selected AI model extracts a draft. You review every item before it is saved.</p></div><span class="pill pill-primary">Review first</span></div>
         <form id="upload-form" class="form-grid">
           <label>Subject name (optional)<input name="subject_name" maxlength="120" placeholder="e.g. Physics II"></label>
           <label class="file-drop">PDF, DOCX, image, or text file<input name="file" type="file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png"></label>
           <label class="span-2">Or paste syllabus text<textarea name="pasted_text" placeholder="Paste units, topics, marks, and any known prerequisites"></textarea></label>
-          <div class="span-2"><button class="button" type="submit">Extract with Gemini</button><p class="hint">Your Gemini key stays in this browser. The syllabus content is sent to Google only when you request extraction.</p></div>
+          <div class="span-2"><button class="button" type="submit">Extract with AI</button><p class="hint">Your API key stays in this browser. The syllabus content is sent to Google only when you request extraction.</p></div>
         </form>
         <p id="upload-status" class="status-message" hidden role="status" aria-live="polite"></p>
         <div id="extraction-review"></div>

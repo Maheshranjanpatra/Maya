@@ -21,7 +21,9 @@ export async function api(url, options = {}) {
 
   const settings = (await IDB.get('settings', 1)) || {};
   const headers = { ...options.headers };
-  if (settings.gemini_api_key) headers['X-Gemini-Api-Key'] = settings.gemini_api_key;
+  const apiKey = settings.ai_api_key || settings.gemini_api_key;
+  if (apiKey) headers['X-AI-Api-Key'] = apiKey;
+  if (settings.ai_model) headers['X-AI-Model'] = settings.ai_model;
 
   if (url === '/api/ai/explain' || url === '/api/ai/flashcards' || url === '/api/ai/quickadd') {
     const body = JSON.parse(options.body || '{}');

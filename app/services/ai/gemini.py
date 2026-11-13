@@ -1,9 +1,40 @@
 import asyncio
 import json
+import re
 
 from pydantic import ValidationError
 
 from .base import AIProvider, AIProviderError
+
+
+def _request_error(error):
+    detail = " ".join(str(error).split())
+    lowered = detail.lower()
+    if any(value in lowered for value in ("429", "resource_exhausted", "quota")):
+        message = (
+            "The selected model's API quota or rate limit was reached. "
+            "Check your provider's usage limits or try again later."
+        )
+    elif any(
+        value in lowered
+        for value in ("401", "403", "api_key_invalid", "api key not valid")
+    ):
+        message = (
+            "The AI provider rejected this API key or its permissions. "
+            "Check that the key is valid and enabled for the selected model."
+        )
+    elif any(value in lowered for value in ("404", "not_found", "model not found")):
+        message = (
+            "The selected model was not found or is unavailable to this API key. "
+            "Choose another model in Settings."
+        )
+    else:
+        detail = re.sub(r"AIza[0-9A-Za-z_-]{20,}", "[redacted API key]", detail)
+        detail = re.sub(r"(?i)(key=)[^&\s]+", r"\1[redacted]", detail)
+        message = "AI provider request failed. Check the API key and selected model."
+        if detail:
+            message += f" Details: {detail[:240]}"
+    return AIProviderError(message)
 
 
 class GeminiProvider(AIProvider):
@@ -58,9 +89,7 @@ class GeminiProvider(AIProvider):
         except AIProviderError:
             raise
         except Exception as error:
-            raise AIProviderError(
-                "Gemini request failed. Check your API key, model access, and quota."
-            ) from error
+            raise _request_error(error) from error
 
         try:
             data = json.loads(raw)
@@ -78,5 +107,7 @@ class GeminiProvider(AIProvider):
             return await self._generate(
                 f"{system}\n{user}", image_bytes, image_mime_type
             )
+        except AIProviderError:
+            raise
         except Exception as error:
-            raise AIProviderError("Gemini request failed.") from error
+            raise _request_error(error) from error
