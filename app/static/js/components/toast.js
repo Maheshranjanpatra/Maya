@@ -1,7 +1,9 @@
 export function toast(message, options = {}) {
   const container = document.querySelector('#toast-container');
+  container.replaceChildren();
   const element = document.createElement('div');
-  element.className = 'toast';
+  element.classList.add('toast');
+  if (options.variant) element.classList.add(`toast-${options.variant}`);
   const text = document.createElement('span');
   text.textContent = message;
   element.append(text);
@@ -18,6 +20,8 @@ export function toast(message, options = {}) {
   }
 
   container.append(element);
-  window.setTimeout(() => element.remove(), options.duration || 5000);
+  if (options.duration !== 0) {
+    window.setTimeout(() => element.remove(), options.duration ?? 5000);
+  }
   return element;
 }

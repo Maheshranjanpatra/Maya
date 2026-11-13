@@ -48,7 +48,9 @@ The interface is an installable PWA. Its application shell is cached for
 offline access, and study data remains in IndexedDB on that device. Browser
 storage is tied to the app's origin and browser profile; clearing browser data
 can erase it. Use Settings to download a JSON backup regularly or restore one
-on this device. Maya does not sync data between devices.
+on this device. Maya does not sync data between devices. When a new app version
+is deployed, Maya shows an update prompt; tap **Update** to reload the latest
+version while keeping your study data on the device.
 
 ## Development checks
 

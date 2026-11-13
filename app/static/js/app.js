@@ -78,7 +78,38 @@ async function setupApp() {
   updateStatus();
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch(() => {
+    navigator.serviceWorker.register('/service-worker.js', {
+      scope: '/',
+      updateViaCache: 'none'
+    }).then(registration => {
+      let updatePromptShown = false;
+
+      const showUpdatePrompt = worker => {
+        if (updatePromptShown || !navigator.serviceWorker.controller) return;
+        updatePromptShown = true;
+        toast('App updated. Tap Update to load the latest version.', {
+          action: () => (registration.waiting || worker).postMessage({ type: 'SKIP_WAITING' }),
+          label: 'Update',
+          duration: 0,
+          variant: 'update'
+        });
+      };
+
+      navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
+      if (registration.waiting) showUpdatePrompt(registration.waiting);
+      registration.addEventListener('updatefound', () => {
+        const worker = registration.installing;
+        worker?.addEventListener('statechange', () => {
+          if (worker.state === 'installed') showUpdatePrompt(worker);
+        });
+      });
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          registration.update().catch(error => console.error('Maya update check failed:', error));
+        }
+      });
+    }).catch(() => {
       toast('Offline support could not start. Reload Maya when you are online.');
     });
   }

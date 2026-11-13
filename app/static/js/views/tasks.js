@@ -366,7 +366,7 @@ function openTimer(container, initialTaskId) {
   const resetButton = sheet.root.querySelector('#timer-reset');
   const start = () => {
     if (!timer) {
-      timer = startTimer(phase === 'focus' ? 25 * 60 : 5 * 60, tick, complete);
+      timer = startTimer(phase === 'focus' ? 25 * 60 : 5 * 60, complete, tick);
     }
     if (phase === 'focus' && !focusStartedAt) focusStartedAt = new Date().toISOString();
     timer.start();
@@ -395,7 +395,7 @@ function openTimer(container, initialTaskId) {
       sheet.root.querySelector('#timer-phase').textContent = 'Focus';
       sheet.root.querySelector('#timer-caption').textContent = 'Focus session';
     }
-    timer = startTimer(phase === 'focus' ? 25 * 60 : 5 * 60, tick, complete);
+    timer = startTimer(phase === 'focus' ? 25 * 60 : 5 * 60, complete, tick);
     timer.start();
     toast(phase === 'break' ? 'Focus complete. Take a short break.' : 'Break complete. Ready to focus.');
   };
@@ -403,7 +403,7 @@ function openTimer(container, initialTaskId) {
   pauseButton.addEventListener('click', () => timer?.pause());
   resetButton.addEventListener('click', () => {
     timer?.cancel();
-    timer = startTimer(phase === 'focus' ? 25 * 60 : 5 * 60, tick, complete);
+    timer = startTimer(phase === 'focus' ? 25 * 60 : 5 * 60, complete, tick);
     focusStartedAt = null;
     start();
   });
