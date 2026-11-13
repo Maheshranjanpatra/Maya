@@ -1,4 +1,4 @@
-# Maya
+# Maya - Study Tracker
 
 Maya is a local-first study planner for university students. It turns a
 syllabus into editable subjects, topics, and study tasks; schedules work around
