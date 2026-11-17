@@ -116,7 +116,6 @@ async function setupApp() {
 }
 
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') document.querySelector('#modal-root').replaceChildren();
   if (
     !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)
     && ['1', '2', '3', '4'].includes(event.key)

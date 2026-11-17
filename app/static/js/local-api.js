@@ -23,6 +23,10 @@ export class LocalApiError extends Error {
 const fail = (message, status) => { throw new LocalApiError(message, status); };
 const dateKey = value => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
 const today = () => dateKey(new Date());
+const localDay = value => dateKey(new Date(value));
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TASK_STATUSES = new Set(['pending', 'done', 'missed', 'skipped']);
+const TASK_PATCH_KEYS = ['status', 'scheduled_date', 'actual_minutes', 'est_minutes', 'skip_reason'];
 const parse = value => value ? JSON.parse(value) : {};
 const bodyOf = options => options.body instanceof FormData ? options.body : parse(options.body);
 const all = store => IDB.all(store);
@@ -71,6 +75,9 @@ async function taskRows(filters = {}) {
       subject_color: subject?.color || '',
       exam_weight: subject?.exam_weight || 100,
       topic_name: topic?.name || '',
+      topic_notes: topic?.notes || '',
+      topic_importance: Number(topic?.importance || 0),
+      topic_importance_reason: topic?.importance_reason || '',
       unit_id: unit?.id || null,
       unit_name: unit?.name || '',
       unit_order: Number(unit?.order_index || 0),
@@ -104,7 +111,7 @@ async function examsWithRisk() {
   return exams.map(exam => {
     const subject = subjects.find(item => item.id === exam.subject_id);
     const days = Math.round((new Date(`${exam.exam_date}T00:00:00`) - new Date(`${today()}T00:00:00`)) / 86400000);
-    const remaining = tasks.filter(task => task.subject_id === exam.subject_id && task.status === 'pending')
+    const remaining = tasks.filter(task => task.subject_id === exam.subject_id && ['pending', 'missed'].includes(task.status))
       .reduce((sum, task) => sum + Number(task.est_minutes || 0), 0);
     const available = Math.max(0, days) * capacity;
     return {
@@ -141,6 +148,7 @@ async function replan() {
     return { ...task, unit_id: unit?.id || null, deadline, exam_weight: Number(exam?.weightage || 100) };
   });
   const capacity = Math.floor(Number(appSettings.daily_capacity_minutes) * (100 - Number(appSettings.buffer_pct)) / 100);
+  const pendingIds = new Set(candidates.map(task => task.id));
   const availableDays = new Set(appSettings.study_days || DEFAULT_SETTINGS.study_days);
   const blockedDays = new Set(blackouts.map(item => item.date));
   const latest = candidates.reduce((max, task) => task.deadline > max ? task.deadline : max, today());
@@ -154,9 +162,9 @@ async function replan() {
     while (remaining > 0) {
       const available = candidates.filter(task => !schedule[task.id]
         && task.deadline >= key
-        && Number(task.est_minutes || 0) <= remaining
+        && (Number(task.est_minutes || 0) <= remaining || remaining === capacity)
         && dependencies.filter(item => item.prereq_task_id === task.id)
-          .every(item => Boolean(schedule[item.task_id])));
+          .every(item => !pendingIds.has(item.task_id) || Boolean(schedule[item.task_id])));
       if (!available.length) break;
       const chosen = available.sort((a, b) => {
         const scoreA = Number(a.exam_weight) / (1 + (subjectLoad.get(a.subject_id) || 0));
@@ -195,7 +203,7 @@ async function planWeek(start) {
   const days = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(startDate);
     date.setDate(date.getDate() + index);
-    const key = date.toISOString().slice(0, 10);
+    const key = dateKey(date);
     const dayTasks = tasks.filter(task => task.status !== 'done' && task.scheduled_date === key);
     return {
       date: key,
@@ -228,13 +236,13 @@ async function profile() {
   while (50 * level * (level - 1) <= total) level += 1;
   level -= 1;
   const into = total - 50 * (level - 1) * level;
-  const doneDays = [...new Set(tasks.filter(task => task.status === 'done' && task.completed_at).map(task => task.completed_at.slice(0, 10)))].sort().reverse();
+  const doneDays = [...new Set(tasks.filter(task => task.status === 'done' && task.completed_at).map(task => localDay(task.completed_at)))].sort().reverse();
   const current = new Date(`${today()}T00:00:00`);
   let streak = 0;
   for (const day of doneDays) {
     const expected = new Date(current);
     expected.setDate(expected.getDate() - streak);
-    if (day !== expected.toISOString().slice(0, 10)) break;
+    if (day !== dateKey(expected)) break;
     streak += 1;
   }
   return {
@@ -256,12 +264,12 @@ async function heatmap(days = 84) {
   return Array.from({ length: days }, (_, index) => {
     const date = new Date();
     date.setDate(date.getDate() - (days - index - 1));
-    const key = date.toISOString().slice(0, 10);
+    const key = dateKey(date);
     return {
       date: key,
-      xp: events.filter(item => item.created_at?.slice(0, 10) === key).reduce((sum, item) => sum + Number(item.amount || 0), 0),
-      minutes: sessions.filter(item => item.started_at?.slice(0, 10) === key).reduce((sum, item) => sum + Number(item.minutes || 0), 0),
-      tasks: tasks.filter(item => item.status === 'done' && item.completed_at?.slice(0, 10) === key).length
+      xp: events.filter(item => item.created_at && localDay(item.created_at) === key).reduce((sum, item) => sum + Number(item.amount || 0), 0),
+      minutes: sessions.filter(item => item.started_at && localDay(item.started_at) === key).reduce((sum, item) => sum + Number(item.minutes || 0), 0),
+      tasks: tasks.filter(item => item.status === 'done' && item.completed_at && localDay(item.completed_at) === key).length
     };
   });
 }
@@ -291,12 +299,12 @@ async function overview() {
   const now = new Date();
   const monday = new Date(now);
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
-  const weekStart = monday.toISOString().slice(0, 10);
+  const weekStart = dateKey(monday);
   const lastWeek = new Date(monday);
   lastWeek.setDate(lastWeek.getDate() - 7);
-  const lastWeekStart = lastWeek.toISOString().slice(0, 10);
-  const thisWeekMinutes = sessions.filter(item => item.started_at >= weekStart).reduce((sum, item) => sum + Number(item.minutes || 0), 0);
-  const lastWeekMinutes = sessions.filter(item => item.started_at >= lastWeekStart && item.started_at < weekStart).reduce((sum, item) => sum + Number(item.minutes || 0), 0);
+  const lastWeekStart = dateKey(lastWeek);
+  const thisWeekMinutes = sessions.filter(item => item.started_at && localDay(item.started_at) >= weekStart).reduce((sum, item) => sum + Number(item.minutes || 0), 0);
+  const lastWeekMinutes = sessions.filter(item => item.started_at && localDay(item.started_at) >= lastWeekStart && localDay(item.started_at) < weekStart).reduce((sum, item) => sum + Number(item.minutes || 0), 0);
   const topicCompletions = topics.map(topic => {
     const unit = units.find(item => item.id === topic.unit_id);
     const subject = subjects.find(item => item.id === unit?.subject_id);
@@ -325,9 +333,97 @@ async function calendarMonth(month) {
       date,
       task_count: tasks.filter(task => task.scheduled_date === date && task.status !== 'skipped').length,
       exam_count: exams.filter(exam => exam.exam_date === date).length,
-      xp: events.filter(item => item.created_at?.slice(0, 10) === date).reduce((sum, item) => sum + Number(item.amount || 0), 0)
+      xp: events.filter(item => item.created_at && localDay(item.created_at) === date).reduce((sum, item) => sum + Number(item.amount || 0), 0)
     };
   });
+}
+
+async function updateTask(task, data) {
+  const id = task.id;
+  const updated = { ...task, ...Object.fromEntries(TASK_PATCH_KEYS.filter(key => key in data).map(key => [key, data[key]])) };
+  if (data.status === 'done' && task.status !== 'done') {
+    updated.completed_at = new Date().toISOString();
+    const points = { read: 10, notes: 10, practice: 15, pastpaper: 20, revise: 15, mocktest: 30, lab: 20, assignment: 20 }[task.type] || 10;
+    const events = await all('xp_events');
+    if (!events.some(item => item.reason === 'Task completed' && item.ref_id === id && item.amount > 0)) {
+      await add('xp_events', { amount: points, reason: 'Task completed', ref_id: id, created_at: updated.completed_at });
+    }
+    if (task.type === 'read' && task.topic_id) {
+      const [reviews, topic] = await Promise.all([all('review_items'), byId('topics', task.topic_id)]);
+      if (topic && !reviews.some(item => item.topic_id === task.topic_id)) {
+        for (const interval of [1, 3, 7]) {
+          const due = new Date();
+          due.setDate(due.getDate() + interval);
+          const date = dateKey(due);
+          await add('tasks', { topic_id: topic.id, subject_id: task.subject_id, type: 'revise', title: `Review: ${topic.name}`, est_minutes: 15, scheduled_date: date, due_date: date, is_revision: 1, status: 'pending', created_by: 'system' });
+        }
+        const due = new Date();
+        due.setDate(due.getDate() + 1);
+        await add('review_items', { topic_id: task.topic_id, ease: 2.5, interval_days: 1, next_review: dateKey(due), reps: 0 });
+      }
+    }
+  } else if (data.status && data.status !== 'done' && task.status === 'done') {
+    updated.completed_at = null;
+    const events = await all('xp_events');
+    const event = events.find(item => item.reason === 'Task completed' && item.ref_id === id && item.amount > 0);
+    if (event && !events.some(item => item.reason === 'Task unchecked' && item.ref_id === id)) {
+      await add('xp_events', { amount: -event.amount, reason: 'Task unchecked', ref_id: id, created_at: new Date().toISOString() });
+    }
+    if (task.type === 'read' && task.topic_id) {
+      // Undoing a reading task also removes the reviews it created, unless one was already started.
+      const [allTasks, reviews] = await Promise.all([all('tasks'), all('review_items')]);
+      const autoReviews = allTasks.filter(item => item.topic_id === task.topic_id && item.is_revision && item.created_by === 'system');
+      if (autoReviews.length && autoReviews.every(item => item.status === 'pending')) {
+        await Promise.all(autoReviews.map(item => remove('tasks', item.id)));
+        await Promise.all(reviews.filter(item => item.topic_id === task.topic_id).map(item => remove('review_items', item.id)));
+      }
+    }
+  } else if (data.status && data.status !== 'done') updated.completed_at = null;
+  await put('tasks', updated);
+  return updated;
+}
+
+async function keyTopics() {
+  const [subjects, units, topics, tasks] = await Promise.all([all('subjects'), all('units'), all('topics'), all('tasks')]);
+  const tasksByTopic = new Map();
+  for (const task of tasks) {
+    if (task.topic_id == null || task.status === 'skipped' || task.is_revision) continue;
+    if (!tasksByTopic.has(task.topic_id)) tasksByTopic.set(task.topic_id, []);
+    tasksByTopic.get(task.topic_id).push(task);
+  }
+  return subjects.filter(subject => !subject.archived).sort((a, b) => a.name.localeCompare(b.name)).map(subject => ({
+    id: subject.id,
+    name: subject.name,
+    color: subject.color || '',
+    units: units.filter(unit => unit.subject_id === subject.id)
+      .sort((a, b) => Number(a.order_index || 0) - Number(b.order_index || 0) || a.name.localeCompare(b.name))
+      .map(unit => {
+        const unitTopics = topics.filter(topic => topic.unit_id === unit.id);
+        return {
+          id: unit.id,
+          name: unit.name,
+          order_index: Number(unit.order_index || 0),
+          topics: unitTopics.filter(topic => !topic.parent_topic_id).map(topic => {
+            const children = unitTopics.filter(item => item.parent_topic_id === topic.id);
+            const related = [topic, ...children].flatMap(item => tasksByTopic.get(item.id) || []);
+            return {
+              id: topic.id,
+              name: topic.name,
+              marks: Number(topic.marks || 0),
+              difficulty: Number(topic.difficulty || 3),
+              est_minutes: Number(topic.est_minutes || 0),
+              subtopics: children.map(item => item.name),
+              importance: Number(topic.importance || 0),
+              importance_reason: topic.importance_reason || '',
+              task_total: related.length,
+              task_done: related.filter(task => task.status === 'done').length,
+              open_task_ids: related.filter(task => ['pending', 'missed'].includes(task.status)).map(task => task.id),
+              done_task_ids: related.filter(task => task.status === 'done').map(task => task.id)
+            };
+          })
+        };
+      })
+  }));
 }
 
 async function dispatch(path, method, options, query) {
@@ -408,6 +504,20 @@ async function dispatch(path, method, options, query) {
     await add('tasks', { topic_id: topicId, subject_id: unit.subject_id, type: 'read', title: `Read: ${name}`, est_minutes: Math.max(15, Number(data.est_minutes || 60)), status: 'pending', created_by: 'manual', actual_minutes: 0, priority_score: 0 });
     return { id: topicId };
   }
+  if (parts[0] === 'keytopics' && method === 'GET') return keyTopics();
+  if (parts[0] === 'topics' && parts[1] === 'importance' && method === 'POST') {
+    const topics = new Map((await all('topics')).map(item => [item.id, item]));
+    const stamp = new Date().toISOString();
+    let updated = 0;
+    for (const item of Array.isArray(data.items) ? data.items : []) {
+      const topic = topics.get(Number(item.topic_id));
+      const score = Math.round(Number(item.score));
+      if (!topic || !(score >= 1 && score <= 5)) continue;
+      await put('topics', { ...topic, importance: score, importance_reason: String(item.reason || '').slice(0, 200), importance_at: stamp });
+      updated += 1;
+    }
+    return { updated };
+  }
   if (parts[0] === 'topics' && method === 'PATCH') {
     const id = Number(parts[1]);
     const topic = await byId('topics', id);
@@ -453,11 +563,50 @@ async function dispatch(path, method, options, query) {
       return { created: created.length };
     }
     if (parts[1] === 'bulk' && method === 'POST') {
-      for (const taskId of data.task_ids || []) {
-        const item = await byId('tasks', taskId);
-        if (item) await put('tasks', { ...item, ...Object.fromEntries(['scheduled_date', 'est_minutes', 'status'].filter(key => key in data).map(key => [key, data[key]])) });
+      const ids = [...new Set((data.task_ids || []).map(Number))].filter(Number.isFinite);
+      if (!ids.length) fail('Select at least one task.');
+      if (ids.length > 500) fail('Select 500 tasks or fewer at a time.');
+      const patch = {};
+      if ('status' in data) {
+        if (!TASK_STATUSES.has(data.status)) fail('Choose a valid task status.');
+        patch.status = data.status;
       }
-      return { updated: (data.task_ids || []).length };
+      const taskStatuses = data.task_statuses || {};
+      if (!taskStatuses || typeof taskStatuses !== 'object' || Array.isArray(taskStatuses)
+        || Object.values(taskStatuses).some(status => !TASK_STATUSES.has(status))) {
+        fail('Choose valid task statuses.');
+      }
+      if ('scheduled_date' in data) {
+        if (!DATE_RE.test(String(data.scheduled_date || ''))) fail('Choose a valid date.');
+        patch.scheduled_date = data.scheduled_date;
+      }
+      if ('est_minutes' in data) {
+        const minutes = Number(data.est_minutes);
+        if (!(minutes >= 5 && minutes <= 600)) fail('Estimates must be between 5 and 600 minutes.');
+        patch.est_minutes = minutes;
+      }
+      if (patch.status === 'skipped') patch.skip_reason = String(data.skip_reason || '').trim().slice(0, 300);
+      const snoozeDays = Math.max(0, Math.min(30, Number(data.snooze_days || 0)));
+      if (!Object.keys(patch).length && !snoozeDays && !Object.keys(taskStatuses).length) fail('Choose what to change.');
+      const rows = new Map((await all('tasks')).map(item => [item.id, item]));
+      let updated = 0;
+      let ignored = 0;
+      for (const taskId of ids) {
+        const item = rows.get(taskId);
+        if (!item) { ignored += 1; continue; }
+        const change = { ...patch };
+        if (Object.hasOwn(taskStatuses, taskId)) change.status = taskStatuses[taskId];
+        if (snoozeDays) {
+          if (['done', 'skipped'].includes(item.status)) { ignored += 1; continue; }
+          const base = item.scheduled_date ? new Date(`${item.scheduled_date}T12:00:00`) : new Date();
+          base.setDate(base.getDate() + snoozeDays);
+          change.scheduled_date = dateKey(base);
+          change.status = 'pending';
+        }
+        await updateTask(item, change);
+        updated += 1;
+      }
+      return { updated, ignored };
     }
     if (parts.length === 1 && method === 'POST') {
       if (!data.title || !data.subject_id) fail('Task title and subject are required.');
@@ -471,7 +620,7 @@ async function dispatch(path, method, options, query) {
     if (parts[2] === 'snooze' && method === 'POST') {
       const base = task.scheduled_date ? new Date(`${task.scheduled_date}T12:00:00`) : new Date();
       base.setDate(base.getDate() + Math.max(1, Math.min(30, Number(data.days || 1))));
-      const scheduledDate = base.toISOString().slice(0, 10);
+      const scheduledDate = dateKey(base);
       await put('tasks', { ...task, scheduled_date: scheduledDate, status: 'pending' });
       return { scheduled_date: scheduledDate };
     }
@@ -490,38 +639,8 @@ async function dispatch(path, method, options, query) {
       return {};
     }
     if (method === 'PATCH') {
-      const updated = { ...task, ...Object.fromEntries(['status', 'scheduled_date', 'actual_minutes', 'est_minutes'].filter(key => key in data).map(key => [key, data[key]])) };
-      if (data.status === 'done' && task.status !== 'done') {
-        updated.completed_at = new Date().toISOString();
-        const points = { read: 10, notes: 10, practice: 15, pastpaper: 20, revise: 15, mocktest: 30, lab: 20, assignment: 20 }[task.type] || 10;
-        const events = await all('xp_events');
-        if (!events.some(item => item.reason === 'Task completed' && item.ref_id === id && item.amount > 0)) {
-          await add('xp_events', { amount: points, reason: 'Task completed', ref_id: id, created_at: updated.completed_at });
-        }
-        if (task.type === 'read' && task.topic_id) {
-          const [reviews, topic] = await Promise.all([all('review_items'), byId('topics', task.topic_id)]);
-          if (topic && !reviews.some(item => item.topic_id === task.topic_id)) {
-            for (const interval of [1, 3, 7]) {
-              const due = new Date();
-              due.setDate(due.getDate() + interval);
-              const date = due.toISOString().slice(0, 10);
-              await add('tasks', { topic_id: topic.id, subject_id: task.subject_id, type: 'revise', title: `Review: ${topic.name}`, est_minutes: 15, scheduled_date: date, due_date: date, is_revision: 1, status: 'pending', created_by: 'system' });
-            }
-            const due = new Date();
-            due.setDate(due.getDate() + 1);
-            await add('review_items', { topic_id: task.topic_id, ease: 2.5, interval_days: 1, next_review: due.toISOString().slice(0, 10), reps: 0 });
-          }
-        }
-      } else if (data.status && data.status !== 'done' && task.status === 'done') {
-        updated.completed_at = null;
-        const events = await all('xp_events');
-        const event = events.find(item => item.reason === 'Task completed' && item.ref_id === id && item.amount > 0);
-        if (event && !events.some(item => item.reason === 'Task unchecked' && item.ref_id === id)) {
-          await add('xp_events', { amount: -event.amount, reason: 'Task unchecked', ref_id: id, created_at: new Date().toISOString() });
-        }
-      } else if (data.status && data.status !== 'done') updated.completed_at = null;
-      await put('tasks', updated);
-      return updated;
+      if ('status' in data && !TASK_STATUSES.has(data.status)) fail('Choose a valid task status.');
+      return updateTask(task, data);
     }
   }
   if (parts[0] === 'plan') {
@@ -552,8 +671,8 @@ async function dispatch(path, method, options, query) {
       const ease = Math.max(1.3, Number(review.ease || 2.5) + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
       const interval = quality < 3 ? 1 : Number(review.reps) === 0 ? 1 : Number(review.reps) === 1 ? 6 : Math.max(1, Math.round(Number(review.interval_days) * ease));
       const next = new Date(`${today()}T12:00:00`); next.setDate(next.getDate() + interval);
-      await put('review_items', { ...review, ease, interval_days: interval, next_review: next.toISOString().slice(0, 10), reps: Number(review.reps || 0) + 1 });
-      return { next_review: next.toISOString().slice(0, 10), interval_days: interval, ease };
+      await put('review_items', { ...review, ease, interval_days: interval, next_review: dateKey(next), reps: Number(review.reps || 0) + 1 });
+      return { next_review: dateKey(next), interval_days: interval, ease };
     }
   }
   if (parts[0] === 'profile' && method === 'GET') return profile();
@@ -609,7 +728,7 @@ async function commitExtraction(extraction) {
     const topicIds = new Map();
     const unitRows = [];
     for (const [index, unit] of [...(source.units || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0)).entries()) {
-      const unitId = await add('units', { subject_id: subjectId, name: unit.name.trim(), order_index: unit.order ?? index });
+      const unitId = await add('units', { subject_id: subjectId, name: unit.name.trim(), order_index: index + 1 });
       const topicRows = [];
       for (const topic of unit.topics || []) {
         const topicId = await add('topics', { unit_id: unitId, name: topic.name.trim(), difficulty: Number(topic.difficulty || 3), marks: Number(topic.marks || 0), est_minutes: Math.max(15, Math.round(Number(topic.est_hours || 1) * 60)), confidence: Number(topic.confidence ?? 0.8), notes: '', parent_topic_id: null });

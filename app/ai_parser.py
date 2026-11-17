@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field
 
-
 class Topic(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     subtopics: list[str] = Field(default_factory=list)
@@ -10,12 +9,10 @@ class Topic(BaseModel):
     prerequisites: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.8, ge=0, le=1)
 
-
 class Unit(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     order: int = Field(default=1, ge=1)
     topics: list[Topic] = Field(default_factory=list)
-
 
 class Subject(BaseModel):
     name: str = Field(min_length=1, max_length=120)
@@ -23,7 +20,15 @@ class Subject(BaseModel):
     credits: float | None = Field(default=None, ge=0)
     units: list[Unit] = Field(default_factory=list)
 
-
 class Extraction(BaseModel):
     subjects: list[Subject] = Field(min_length=1)
     warnings: list[str] = Field(default_factory=list)
+
+class TopicImportance(BaseModel):
+    topic_id: int
+    score: int = Field(ge=1, le=5)
+    reason: str = ""
+
+
+class ImportanceResult(BaseModel):
+    topics: list[TopicImportance] = Field(default_factory=list)

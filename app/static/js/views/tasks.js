@@ -10,6 +10,8 @@ const TYPES = ['read', 'notes', 'practice', 'pastpaper', 'revise', 'mocktest', '
 let taskCache = [];
 let subjectsCache = [];
 
+const localDateKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
 export async function render(container) {
   container.innerHTML = `
     <header class="view-heading">
@@ -78,19 +80,20 @@ function filteredTasks(container) {
   const query = container.querySelector('#task-search').value.trim().toLowerCase();
   const filter = container.querySelector('#task-filter').value;
   const subjectId = container.querySelector('#subject-filter').value;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateKey(new Date());
   return taskCache.filter(task => {
     const matchesText = !query || `${task.title} ${task.subject_name || ''} ${task.topic_name || ''}`.toLowerCase().includes(query);
     const matchesSubject = !subjectId || String(task.subject_id) === subjectId;
+    const active = !['done', 'skipped'].includes(task.status);
     const matchesStatus = filter === 'all'
       || (filter === 'done' && task.status === 'done')
       || (filter === 'active' && ['pending', 'missed'].includes(task.status))
-      || (filter === 'today' && task.status !== 'done' && task.scheduled_date === today)
-      || (filter === 'overdue' && task.status !== 'done' && task.scheduled_date < today);
+      || (filter === 'today' && active && task.scheduled_date === today)
+      || (filter === 'overdue' && active && task.scheduled_date < today);
     return matchesText && matchesSubject && matchesStatus;
   }).sort((a, b) => {
-    const aPinned = a.is_due_revision || (a.is_revision && a.scheduled_date <= today && a.status !== 'done');
-    const bPinned = b.is_due_revision || (b.is_revision && b.scheduled_date <= today && b.status !== 'done');
+    const aPinned = a.status !== 'skipped' && (a.is_due_revision || (a.is_revision && a.scheduled_date <= today && a.status !== 'done'));
+    const bPinned = b.status !== 'skipped' && (b.is_due_revision || (b.is_revision && b.scheduled_date <= today && b.status !== 'done'));
     return Number(bPinned) - Number(aPinned)
       || String(a.scheduled_date || '9999').localeCompare(String(b.scheduled_date || '9999'))
       || Number(b.priority_score || 0) - Number(a.priority_score || 0);
@@ -102,6 +105,7 @@ function drawTasks(container) {
   const tasks = filteredTasks(container);
   if (!tasks.length) {
     list.innerHTML = `<article class="card empty-state"><h2>${taskCache.length ? 'Nothing in this filter' : 'Your plan starts here'}</h2><p>${taskCache.length ? 'Try another filter or search.' : 'Add a syllabus or create a task to get moving.'}</p></article>`;
+    updateBulkToolbar(container);
     return;
   }
 
@@ -168,6 +172,7 @@ function drawTasks(container) {
     button.addEventListener('click', () => openTimer(container, Number(button.dataset.startTask)));
   });
   bindSwipe(container);
+  updateBulkToolbar(container);
 }
 
 async function setTaskStatus(container, task, status, notify = false) {
@@ -238,7 +243,7 @@ async function snoozeTask(container, id) {
   const originalDate = task.scheduled_date;
   const base = originalDate ? new Date(`${originalDate}T12:00:00`) : new Date();
   base.setDate(base.getDate() + 1);
-  task.scheduled_date = base.toISOString().slice(0, 10);
+  task.scheduled_date = localDateKey(base);
   task.status = 'pending';
   await IDB.putTask(task);
   drawTasks(container);
@@ -288,6 +293,10 @@ function updateBulkToolbar(container) {
     apply.textContent = 'Save date';
     toolbar.append(input, apply);
     apply.onclick = async () => {
+      if (!input.value) {
+        toast('Choose a date before moving tasks.');
+        return;
+      }
       try {
         await api('/api/tasks/bulk', { method: 'POST', body: JSON.stringify({ task_ids: selected, scheduled_date: input.value }) });
         selected.forEach(id => {
@@ -295,14 +304,64 @@ function updateBulkToolbar(container) {
           if (task) task.scheduled_date = input.value;
         });
         drawTasks(container);
+        window.dispatchEvent(new CustomEvent('maya:refresh'));
       } catch (error) {
         toast(error.message);
       }
     };
   });
-  toolbar.querySelector('[data-bulk-done]').addEventListener('click', async () => {
-    await Promise.all(selected.map(id => toggleTask(container, id, true)));
-  });
+  toolbar.querySelector('[data-bulk-done]').addEventListener('click', () => completeTasks(container, selected));
+}
+
+async function completeTasks(container, selected) {
+  const tasks = selected
+    .map(id => taskCache.find(task => task.id === id))
+    .filter(task => task && task.status !== 'done');
+  if (!tasks.length) return;
+  const ids = tasks.map(task => task.id);
+  const previousStatuses = Object.fromEntries(tasks.map(task => [task.id, task.status]));
+  const button = container.querySelector('[data-bulk-done]');
+  if (button) button.disabled = true;
+  try {
+    const result = await api('/api/tasks/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ task_ids: ids, status: 'done' })
+    });
+    tasks.forEach(task => {
+      task.status = 'done';
+      task.is_due_revision = false;
+    });
+    drawTasks(container);
+    toast(`${result.updated} ${result.updated === 1 ? 'task' : 'tasks'} complete.`, {
+      label: 'Undo',
+      action: () => undoBulkComplete(container, ids, previousStatuses),
+      duration: 5000
+    });
+    window.dispatchEvent(new CustomEvent('maya:refresh'));
+  } catch (error) {
+    if (button) button.disabled = false;
+    toast(error.message);
+  }
+}
+
+async function undoBulkComplete(container, ids, previousStatuses) {
+  try {
+    await api('/api/tasks/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ task_ids: ids, task_statuses: previousStatuses })
+    });
+    ids.forEach(id => {
+      const task = taskCache.find(item => item.id === id);
+      if (!task) return;
+      task.status = previousStatuses[id];
+      task.is_due_revision = false;
+    });
+    drawTasks(container);
+    toast('Tasks restored.');
+    window.dispatchEvent(new CustomEvent('maya:refresh'));
+  } catch (error) {
+    toast(error.message);
+  }
 }
 
 async function openTaskForm(container) {
@@ -351,14 +410,14 @@ function openTimer(container, initialTaskId) {
   const options = pending.map(task =>
     `<option value="${task.id}" ${task.id === initialTaskId ? 'selected' : ''}>${escapeHTML(task.title)}</option>`
   ).join('');
+  let timer;
   const sheet = showSheet(`
     <div class="sheet-handle" aria-hidden="true"></div>
     <div class="sheet-heading"><div><p class="eyebrow">Focus mode</p><h2 id="timer-phase">Focus</h2></div><button class="icon-button" data-close-sheet aria-label="Close">${ICONS.close}</button></div>
     <label>Study task<select id="timer-task">${options || '<option value="">Unlinked focus session</option>'}</select></label>
     <div class="timer-face"><span id="timer-display" class="timer-clock">25:00</span><span id="timer-caption" class="muted">Focus session</span></div>
-    <div class="split-actions"><button id="timer-start" class="button">Start</button><button id="timer-pause" class="button button-quiet">Pause</button><button id="timer-reset" class="button button-quiet">Reset</button></div>`);
+    <div class="split-actions"><button id="timer-start" class="button">Start</button><button id="timer-pause" class="button button-quiet">Pause</button><button id="timer-reset" class="button button-quiet">Reset</button></div>`, () => timer?.pause());
   let phase = 'focus';
-  let timer;
   let focusStartedAt;
   const display = sheet.root.querySelector('#timer-display');
   const pauseButton = sheet.root.querySelector('#timer-pause');
@@ -385,6 +444,7 @@ function openTimer(container, initialTaskId) {
           toast(error.message);
         }
       }
+      if (!sheet.root.contains(display)) return;
       if (navigator.vibrate) navigator.vibrate([30, 60, 30]);
       phase = 'break';
       sheet.root.querySelector('#timer-phase').textContent = 'Break';
@@ -407,5 +467,4 @@ function openTimer(container, initialTaskId) {
     focusStartedAt = null;
     start();
   });
-  sheet.root.querySelector('[data-close-sheet]').addEventListener('click', () => timer?.pause());
 }

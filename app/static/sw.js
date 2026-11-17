@@ -1,4 +1,4 @@
-const CACHE = 'maya-shell-v11';
+const CACHE = 'maya-shell-v12';
 const SHELL = [
   '/',
   '/static/manifest.json',
@@ -24,7 +24,6 @@ const SHELL = [
   '/static/js/components/modal.js',
   '/static/js/components/nav.js',
   '/static/js/components/sidebar.js',
-  '/static/js/components/task-card.js',
   '/static/js/components/toast.js',
   '/static/js/components/theme.js',
   '/static/js/components/visuals.js',

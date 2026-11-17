@@ -9,6 +9,8 @@ export class ApiError extends Error {
   }
 }
 
+const localDateKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
 export async function api(url, options = {}) {
   if (!url.startsWith('/api/ai/') && url !== '/api/upload') {
     try {
@@ -29,6 +31,7 @@ export async function api(url, options = {}) {
     const body = JSON.parse(options.body || '{}');
     if (url === '/api/ai/quickadd') {
       body.subjects = (await IDB.getAllSubjects()).filter(subject => !subject.archived).map(subject => subject.name);
+      body.today = localDateKey(new Date());
     } else {
       const topic = (await IDB.all('topics')).find(item => item.id === Number(body.topic_id));
       if (!topic) throw new ApiError('Topic not found.', 404);

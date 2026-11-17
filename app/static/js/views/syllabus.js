@@ -202,32 +202,34 @@ function renderReview(container, warnings = []) {
   root.innerHTML = `
     <div class="section-heading"><div><h2>Review extracted syllabus</h2><p class="hint">Low-confidence topics are highlighted. Edit, add, or remove anything before confirming.</p></div></div>
     ${warnings.map(warning => `<p class="status-message">${escapeHTML(warning)}</p>`).join('')}
-    <div class="review-editor">${draft.subjects.map((subject, s) => `
-      <section class="review-subject" data-review-subject="${s}">
-        <div class="card-heading"><label>Subject name<input data-s="${s}" data-field="subject-name" value="${escapeHTML(subject.name)}" maxlength="120"></label><button class="small-action" data-delete-subject="${s}" type="button">Remove</button></div>
-        <label>Course code<input data-s="${s}" data-field="subject-code" value="${escapeHTML(subject.code || '')}"></label>
-        ${subject.units.map((unit, u) => `
-          <section class="review-unit">
-            <div class="card-heading"><label>Unit<input data-s="${s}" data-u="${u}" data-field="unit-name" value="${escapeHTML(unit.name)}"></label><button class="small-action" data-delete-unit="${s}:${u}" type="button">Remove unit</button></div>
-            ${unit.topics.map((topic, t) => `
-              <article class="review-topic ${Number(topic.confidence) < .7 ? 'low-confidence' : ''}">
-                <div class="card-heading"><label>Topic<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="topic-name" value="${escapeHTML(topic.name)}" required></label><button class="small-action" data-delete-topic="${s}:${u}:${t}" type="button">Remove</button></div>
-                <div class="field-row">
-                  <label>Marks<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="marks" type="number" min="0" step="1" value="${Number(topic.marks || 0)}"></label>
-                  <label>Hours<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="est_hours" type="number" min=".25" max="60" step=".25" value="${Number(topic.est_hours || 1)}"></label>
-                  <label>Difficulty (1–5)<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="difficulty" type="number" min="1" max="5" value="${Number(topic.difficulty || 3)}"></label>
-                  <label>Confidence (0–1)<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="confidence" type="number" min="0" max="1" step=".05" value="${Number(topic.confidence ?? .8)}"></label>
-                </div>
-                <label>Prerequisites (topic names, comma separated)<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="prerequisites" value="${escapeHTML((topic.prerequisites || []).join(', '))}"></label>
-                <label>Subtopics (comma separated)<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="subtopics" value="${escapeHTML((topic.subtopics || []).join(', '))}"></label>
-                ${Number(topic.confidence) < .7 ? `<span class="confidence-low">Double-check this extraction · ${Math.round(Number(topic.confidence) * 100)}% confidence</span>` : ''}
-              </article>`).join('')}
-            <button type="button" class="small-action" data-add-topic="${s}:${u}">Add topic</button>
-          </section>`).join('')}
-        <button type="button" class="small-action" data-add-unit="${s}">Add unit</button>
-      </section>`).join('')}
-    </div>
-    <div class="split-actions"><button type="button" class="button button-quiet" id="add-review-subject">Add subject</button><button type="button" class="button" id="confirm-extraction">Confirm and save syllabus</button></div>`;
+    <form id="review-form">
+      <div class="review-editor">${draft.subjects.map((subject, s) => `
+        <section class="review-subject" data-review-subject="${s}">
+          <div class="card-heading"><label>Subject name<input data-s="${s}" data-field="subject-name" value="${escapeHTML(subject.name)}" maxlength="120" required></label><button class="small-action" data-delete-subject="${s}" type="button">Remove</button></div>
+          <label>Course code<input data-s="${s}" data-field="subject-code" value="${escapeHTML(subject.code || '')}"></label>
+          ${subject.units.map((unit, u) => `
+            <section class="review-unit">
+              <div class="card-heading"><label>Unit<input data-s="${s}" data-u="${u}" data-field="unit-name" value="${escapeHTML(unit.name)}" required></label><button class="small-action" data-delete-unit="${s}:${u}" type="button">Remove unit</button></div>
+              ${unit.topics.map((topic, t) => `
+                <article class="review-topic ${Number(topic.confidence) < .7 ? 'low-confidence' : ''}">
+                  <div class="card-heading"><label>Topic<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="topic-name" value="${escapeHTML(topic.name)}" required></label><button class="small-action" data-delete-topic="${s}:${u}:${t}" type="button">Remove</button></div>
+                  <div class="field-row">
+                    <label>Marks<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="marks" type="number" min="0" step="1" value="${Number(topic.marks || 0)}"></label>
+                    <label>Hours<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="est_hours" type="number" min=".25" max="60" step=".25" value="${Number(topic.est_hours || 1)}"></label>
+                    <label>Difficulty (1–5)<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="difficulty" type="number" min="1" max="5" value="${Number(topic.difficulty || 3)}"></label>
+                    <label>Confidence (0–1)<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="confidence" type="number" min="0" max="1" step=".05" value="${Number(topic.confidence ?? .8)}"></label>
+                  </div>
+                  <label>Prerequisites (topic names, comma separated)<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="prerequisites" value="${escapeHTML((topic.prerequisites || []).join(', '))}"></label>
+                  <label>Subtopics (comma separated)<input data-s="${s}" data-u="${u}" data-t="${t}" data-field="subtopics" value="${escapeHTML((topic.subtopics || []).join(', '))}"></label>
+                  ${Number(topic.confidence) < .7 ? `<span class="confidence-low">Double-check this extraction · ${Math.round(Number(topic.confidence) * 100)}% confidence</span>` : ''}
+                </article>`).join('')}
+              <button type="button" class="small-action" data-add-topic="${s}:${u}">Add topic</button>
+            </section>`).join('')}
+          <button type="button" class="small-action" data-add-unit="${s}">Add unit</button>
+        </section>`).join('')}
+      </div>
+      <div class="split-actions"><button type="button" class="button button-quiet" id="add-review-subject">Add subject</button><button type="submit" class="button" id="confirm-extraction">Confirm and save syllabus</button></div>
+    </form>`;
 
   root.querySelectorAll('[data-field]').forEach(input => {
     input.addEventListener('input', () => {
@@ -261,7 +263,9 @@ function renderReview(container, warnings = []) {
     renderReview(container, warnings);
   });
   root.querySelectorAll('[data-add-unit]').forEach(button => button.onclick = () => {
-    draft.subjects[Number(button.dataset.addUnit)].units.push({ name: 'New unit', order: 1, topics: [] });
+    const units = draft.subjects[Number(button.dataset.addUnit)].units;
+    const order = Math.max(0, ...units.map(unit => Number(unit.order) || 0)) + 1;
+    units.push({ name: 'New unit', order, topics: [] });
     renderReview(container, warnings);
   });
   root.querySelectorAll('[data-add-topic]').forEach(button => button.onclick = () => {
@@ -273,9 +277,13 @@ function renderReview(container, warnings = []) {
     draft.subjects.push({ name: 'New subject', units: [] });
     renderReview(container, warnings);
   };
-  root.querySelector('#confirm-extraction').onclick = async () => {
-    if (!draft.subjects.length || draft.subjects.some(subject => !subject.name.trim())) {
-      toast('Every subject needs a name.');
+  root.querySelector('#review-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!draft.subjects.length || draft.subjects.some(subject =>
+      !subject.name.trim()
+      || subject.units.some(unit => !unit.name.trim() || unit.topics.some(topic => !topic.name.trim()))
+    )) {
+      toast('Every subject, unit, and topic needs a name.');
       return;
     }
     try {
@@ -294,7 +302,7 @@ function renderReview(container, warnings = []) {
     } catch (error) {
       toast(error.message);
     }
-  };
+  });
 }
 
 function statusMessage(container, text) {
