@@ -114,6 +114,45 @@
   line-height: 1.35;
 }
 
+.task-heading-line,
+.plan-task-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.task-heading-line .task-title {
+  margin: 1px 0 4px;
+}
+
+.task-kind-badge {
+  display: inline-flex;
+  min-height: 23px;
+  align-items: center;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 750;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.task-kind-read {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.task-kind-review {
+  background: var(--accent-soft);
+  color: #80520c;
+}
+
+[data-theme="dark"] .task-kind-review {
+  color: #f1c979;
+}
+
 .task-meta {
   display: flex;
   flex-wrap: wrap;

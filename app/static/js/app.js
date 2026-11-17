@@ -21,17 +21,24 @@ const views = Object.fromEntries(
 
 let activeView;
 let installPrompt;
+let routeGeneration = 0;
 
 async function route() {
+  const generation = ++routeGeneration;
   const requested = (location.hash.slice(2) || 'tasks').split('/')[0];
   const name = viewNames.includes(requested) ? requested : 'tasks';
   activeView = name;
   activateNav(name);
   const container = document.querySelector('#view-container');
   container.innerHTML = '<div class="skeleton skeleton-title"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div>';
+  const viewContainer = document.createElement('div');
+  viewContainer.className = 'view-content';
   try {
-    await views[name].render(container);
+    await views[name].render(viewContainer);
+    if (generation !== routeGeneration) return;
+    container.replaceChildren(viewContainer);
   } catch (error) {
+    if (generation !== routeGeneration) return;
     container.innerHTML = '<section class="card empty-state"><h2>This view could not load</h2><p class="muted"></p><button class="button button-quiet" data-retry>Try again</button></section>';
     container.querySelector('.muted').textContent = error.message;
     container.querySelector('[data-retry]').addEventListener('click', route);

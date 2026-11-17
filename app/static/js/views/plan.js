@@ -52,12 +52,19 @@ function drawPlan(container) {
   container.querySelector('#week-grid').innerHTML = planData.days.map(day => {
     const date = new Date(`${day.date}T12:00:00`);
     const label = date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-    const tasks = day.tasks.map(task => `
-      <article class="plan-task" draggable="true" data-plan-task="${task.id}">
-        <strong>${escapeHTML(task.title)}</strong>
-        <p class="muted">${escapeHTML(task.subject_name || '')} · ${Number(task.est_minutes)} min</p>
-        <button type="button" class="small-action" data-move-task="${task.id}" aria-label="Move ${escapeHTML(task.title)} to another day">Move</button>
-      </article>`).join('');
+    const tasks = day.tasks.map(task => {
+      const kind = task.type === 'read'
+        ? '<span class="task-kind-badge task-kind-read">Read</span>'
+        : task.type === 'revise' ? '<span class="task-kind-badge task-kind-review">Review</span>' : '';
+      const split = task.schedule_chunk_count > 1;
+      const part = split ? ` · Part ${task.schedule_chunk_index} of ${task.schedule_chunk_count}` : '';
+      return `
+      <article class="plan-task" draggable="${!split}" data-plan-task="${task.id}">
+        <div class="plan-task-heading">${kind}<strong>${escapeHTML(task.title)}</strong></div>
+        <p class="muted">${escapeHTML(task.subject_name || '')} · ${Number(task.scheduled_minutes ?? task.est_minutes)} min${part}</p>
+        ${split ? '' : `<button type="button" class="small-action" data-move-task="${task.id}" aria-label="Move ${escapeHTML(task.title)} to another day">Move</button>`}
+      </article>`;
+    }).join('');
     return `<article class="plan-day" data-plan-date="${day.date}">
       <h3>${label}<span class="pill">${Number(day.minutes_planned || 0)} / ${Number(day.capacity_minutes || 0)}m</span></h3>
       <div class="plan-day-tasks">${tasks || '<p class="muted">No tasks planned.</p>'}</div>
@@ -67,6 +74,10 @@ function drawPlan(container) {
   const grid = container.querySelector('#week-grid');
   grid.querySelectorAll('[data-plan-task]').forEach(card => {
     card.addEventListener('dragstart', event => {
+      if (!card.draggable) {
+        event.preventDefault();
+        return;
+      }
       event.dataTransfer.setData('text/plain', card.dataset.planTask);
       event.dataTransfer.effectAllowed = 'move';
     });

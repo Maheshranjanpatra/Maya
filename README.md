@@ -38,7 +38,8 @@ depend on your Google AI Studio project and selected model.
 2. Review and edit the extracted draft, including confidence and prerequisite
    details, then confirm to save it.
 3. Add exam dates, set daily study capacity and study days, and use Plan to
-   review or reschedule the generated schedule.
+   review or reschedule the generated schedule. Longer tasks are split into
+   daily sessions that stay within the configured capacity.
 4. Complete tasks, use focus sessions and spaced reviews, and track progress
    in Visuals and Profile.
 5. Use Settings to export an ICS calendar, back up Maya to JSON, or restore a
@@ -58,4 +59,5 @@ version while keeping your study data on the device.
 python -m pytest -q
 python -m compileall -q app run.py
 find app/static/js -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+node --experimental-default-type=module --test tests/test_local_api.mjs
 ```

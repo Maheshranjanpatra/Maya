@@ -85,11 +85,14 @@ function filteredTasks(container) {
     const matchesText = !query || `${task.title} ${task.subject_name || ''} ${task.topic_name || ''}`.toLowerCase().includes(query);
     const matchesSubject = !subjectId || String(task.subject_id) === subjectId;
     const active = !['done', 'skipped'].includes(task.status);
+    const chunks = Array.isArray(task.schedule_chunks) ? task.schedule_chunks : [];
+    const hasTodayChunk = chunks.some(chunk => chunk.date === today);
+    const lastScheduledDate = chunks.length ? chunks.at(-1).date : task.scheduled_date;
     const matchesStatus = filter === 'all'
       || (filter === 'done' && task.status === 'done')
       || (filter === 'active' && ['pending', 'missed'].includes(task.status))
-      || (filter === 'today' && active && task.scheduled_date === today)
-      || (filter === 'overdue' && active && task.scheduled_date < today);
+      || (filter === 'today' && active && (task.scheduled_date === today || hasTodayChunk))
+      || (filter === 'overdue' && active && lastScheduledDate < today);
     return matchesText && matchesSubject && matchesStatus;
   }).sort((a, b) => {
     const aPinned = a.status !== 'skipped' && (a.is_due_revision || (a.is_revision && a.scheduled_date <= today && a.status !== 'done'));
@@ -111,15 +114,21 @@ function drawTasks(container) {
 
   const taskMarkup = task => {
     const state = task.status === 'done' ? 'is-completed' : '';
-    const dateLabel = task.scheduled_date ? `Scheduled ${escapeHTML(task.scheduled_date)}` : 'Not scheduled';
+    const chunks = Array.isArray(task.schedule_chunks) ? task.schedule_chunks : [];
+    const dateLabel = task.scheduled_date
+      ? `Scheduled ${escapeHTML(task.scheduled_date)}${chunks.length > 1 ? ` · ${chunks.length} study sessions` : ''}`
+      : 'Not scheduled';
     const dueLabel = task.is_due_revision ? '<span class="pill pill-warning">Review due</span>' : '';
     const missed = task.status === 'missed' ? '<span class="pill pill-danger">Needs rescheduling</span>' : '';
+    const kind = task.type === 'read'
+      ? '<span class="task-kind-badge task-kind-read">Read</span>'
+      : task.type === 'revise' ? '<span class="task-kind-badge task-kind-review">Review</span>' : '';
     return `<article class="card task-card ${state}" data-task-card="${task.id}" data-task-status="${task.status}">
       <label class="task-toggle" title="Complete task">
         <input type="checkbox" data-complete-task="${task.id}" ${task.status === 'done' ? 'checked' : ''} aria-label="Complete ${escapeHTML(task.title)}">
       </label>
       <div class="task-content">
-        <div class="task-title-row"><div><h4 class="task-title">${escapeHTML(task.title)}</h4>
+        <div class="task-title-row"><div><div class="task-heading-line">${kind}<h4 class="task-title">${escapeHTML(task.title)}</h4></div>
           <div class="task-meta"><span>${escapeHTML(task.subject_name || 'Subject')}</span><span>${Number(task.est_minutes || 0)} min</span><span>${dateLabel}</span>${dueLabel}${missed}</div>
         </div><label class="bulk-select"><input type="checkbox" data-select-task="${task.id}" aria-label="Select task for bulk edit"><span>Select</span></label></div>
         <div class="task-actions">
@@ -241,9 +250,11 @@ async function snoozeTask(container, id) {
   const task = taskCache.find(item => item.id === id);
   if (!task) return;
   const originalDate = task.scheduled_date;
+  const originalChunks = task.schedule_chunks;
   const base = originalDate ? new Date(`${originalDate}T12:00:00`) : new Date();
   base.setDate(base.getDate() + 1);
   task.scheduled_date = localDateKey(base);
+  task.schedule_chunks = [];
   task.status = 'pending';
   await IDB.putTask(task);
   drawTasks(container);
@@ -252,6 +263,7 @@ async function snoozeTask(container, id) {
     toast('Moved forward by one day.');
   } catch (error) {
     task.scheduled_date = originalDate;
+    task.schedule_chunks = originalChunks;
     await IDB.putTask(task);
     drawTasks(container);
     toast(error.message);
@@ -301,7 +313,10 @@ function updateBulkToolbar(container) {
         await api('/api/tasks/bulk', { method: 'POST', body: JSON.stringify({ task_ids: selected, scheduled_date: input.value }) });
         selected.forEach(id => {
           const task = taskCache.find(item => item.id === id);
-          if (task) task.scheduled_date = input.value;
+          if (task) {
+            task.scheduled_date = input.value;
+            task.schedule_chunks = [];
+          }
         });
         drawTasks(container);
         window.dispatchEvent(new CustomEvent('maya:refresh'));

@@ -43,6 +43,13 @@ const remove = (store, id) => IDB.write(store, 'delete', Number(id));
 const settings = async () => ({ ...DEFAULT_SETTINGS, ...(await IDB.get('settings', 1) || {}) });
 const saveSettings = async value => put('settings', { ...await settings(), ...value, id: 1 });
 const subjectById = async id => byId('subjects', id);
+const scopeUnits = exam => {
+  const value = exam.scope_unit_ids;
+  if (Array.isArray(value)) return value.map(Number);
+  if (typeof value !== 'string' || !value) return [];
+  try { return JSON.parse(value).map(Number); }
+  catch { return []; }
+};
 
 async function subjectRows() {
   const [subjects, units, topics] = await Promise.all([all('subjects'), all('units'), all('topics')]);
@@ -60,7 +67,8 @@ async function taskRows(filters = {}) {
   return tasks.filter(task => {
     const subject = subjects.find(item => item.id === task.subject_id);
     const topic = topics.find(item => item.id === task.topic_id);
-    return (!filters.date || task.scheduled_date === filters.date)
+    return (!filters.date || task.scheduled_date === filters.date
+        || task.schedule_chunks?.some(chunk => chunk.date === filters.date))
       && (!filters.status || task.status === filters.status)
       && (!filters.subject_id || String(task.subject_id) === String(filters.subject_id))
       && (!filters.q || `${task.title} ${topic?.name || ''} ${subject?.name || ''}`.toLowerCase().includes(filters.q.toLowerCase()))
@@ -106,19 +114,25 @@ async function subjectDetail(id) {
 }
 
 async function examsWithRisk() {
-  const [exams, subjects, tasks, appSettings] = await Promise.all([all('exams'), all('subjects'), all('tasks'), settings()]);
+  const [exams, subjects, tasks, topics, appSettings] = await Promise.all([all('exams'), all('subjects'), all('tasks'), all('topics'), settings()]);
   const capacity = Number(appSettings.daily_capacity_minutes) * (100 - Number(appSettings.buffer_pct)) / 100;
   return exams.map(exam => {
     const subject = subjects.find(item => item.id === exam.subject_id);
+    const scope = scopeUnits(exam);
     const days = Math.round((new Date(`${exam.exam_date}T00:00:00`) - new Date(`${today()}T00:00:00`)) / 86400000);
-    const remaining = tasks.filter(task => task.subject_id === exam.subject_id && ['pending', 'missed'].includes(task.status))
+    const remaining = tasks.filter(task => {
+      if (task.subject_id !== exam.subject_id || !['pending', 'missed'].includes(task.status)) return false;
+      if (!scope.length) return true;
+      const topic = topics.find(item => item.id === task.topic_id);
+      return scope.includes(topic?.unit_id);
+    })
       .reduce((sum, task) => sum + Number(task.est_minutes || 0), 0);
     const available = Math.max(0, days) * capacity;
     return {
       ...exam,
       subject_name: subject?.name || '',
       subject_color: subject?.color || '',
-      scope_unit_ids: JSON.stringify(exam.scope_unit_ids || []),
+      scope_unit_ids: JSON.stringify(scope),
       days_remaining: days,
       remaining_minutes: remaining,
       risk: remaining > available ? 'crunch' : remaining > available * 0.8 ? 'tight' : 'comfortable'
@@ -132,14 +146,14 @@ async function replan() {
   ]);
   const pending = tasks.filter(task => ['pending', 'missed'].includes(task.status));
   const schedule = {};
-  const subjectLoad = new Map();
   const topics = await all('topics');
   const units = await all('units');
+  const pendingById = new Map(pending.map(task => [task.id, task]));
   const candidates = pending.map(task => {
     const topic = topics.find(item => item.id === task.topic_id);
     const unit = units.find(item => item.id === topic?.unit_id);
     const exam = exams.filter(item => item.subject_id === task.subject_id && item.exam_date >= today())
-      .filter(item => !item.scope_unit_ids?.length || !unit || item.scope_unit_ids.includes(unit.id))
+      .filter(item => !scopeUnits(item).length || !unit || scopeUnits(item).includes(unit.id))
       .sort((a, b) => a.exam_date.localeCompare(b.exam_date))[0];
     const examDeadline = exam
       ? dateKey(new Date(new Date(`${exam.exam_date}T12:00:00`).getTime() - 86400000))
@@ -147,8 +161,7 @@ async function replan() {
     const deadline = task.due_date && task.due_date < examDeadline ? task.due_date : examDeadline;
     return { ...task, unit_id: unit?.id || null, deadline, exam_weight: Number(exam?.weightage || 100) };
   });
-  const capacity = Math.floor(Number(appSettings.daily_capacity_minutes) * (100 - Number(appSettings.buffer_pct)) / 100);
-  const pendingIds = new Set(candidates.map(task => task.id));
+  const capacity = Math.max(0, Math.floor(Number(appSettings.daily_capacity_minutes) * (100 - Number(appSettings.buffer_pct)) / 100));
   const availableDays = new Set(appSettings.study_days || DEFAULT_SETTINGS.study_days);
   const blockedDays = new Set(blackouts.map(item => item.date));
   const latest = candidates.reduce((max, task) => task.deadline > max ? task.deadline : max, today());
@@ -157,31 +170,90 @@ async function replan() {
     const key = dateKey(day);
     if (availableDays.has(day.getDay()) && !blockedDays.has(key)) studyDates.push(key);
   }
-  for (const key of studyDates.reverse()) {
-    let remaining = capacity;
-    while (remaining > 0) {
-      const available = candidates.filter(task => !schedule[task.id]
-        && task.deadline >= key
-        && (Number(task.est_minutes || 0) <= remaining || remaining === capacity)
-        && dependencies.filter(item => item.prereq_task_id === task.id)
-          .every(item => !pendingIds.has(item.task_id) || Boolean(schedule[item.task_id])));
-      if (!available.length) break;
-      const chosen = available.sort((a, b) => {
-        const scoreA = Number(a.exam_weight) / (1 + (subjectLoad.get(a.subject_id) || 0));
-        const scoreB = Number(b.exam_weight) / (1 + (subjectLoad.get(b.subject_id) || 0));
-        return scoreB - scoreA || Number(b.priority_score || 0) - Number(a.priority_score || 0) || String(a.id).localeCompare(String(b.id));
-      })[0];
-      schedule[chosen.id] = key;
-      const minutes = Math.max(1, Number(chosen.est_minutes || 0));
-      subjectLoad.set(chosen.subject_id, (subjectLoad.get(chosen.subject_id) || 0) + minutes);
-      remaining -= minutes;
+  const remainingByDate = new Map(studyDates.map(key => [key, capacity]));
+  const prerequisites = new Map(candidates.map(task => [task.id, new Set()]));
+  const dependents = new Map(candidates.map(task => [task.id, new Set()]));
+  for (const edge of dependencies) {
+    if (!pendingById.has(edge.task_id) || !pendingById.has(edge.prereq_task_id)) continue;
+    prerequisites.get(edge.task_id).add(edge.prereq_task_id);
+    dependents.get(edge.prereq_task_id).add(edge.task_id);
+  }
+  const indegree = new Map(candidates.map(task => [task.id, prerequisites.get(task.id).size]));
+  const topological = [];
+  const ready = candidates.filter(task => indegree.get(task.id) === 0);
+  while (ready.length) {
+    ready.sort((a, b) => a.deadline.localeCompare(b.deadline)
+      || Number(b.priority_score || 0) - Number(a.priority_score || 0)
+      || Number(a.id) - Number(b.id));
+    const task = ready.shift();
+    topological.push(task);
+    for (const dependentId of dependents.get(task.id)) {
+      indegree.set(dependentId, indegree.get(dependentId) - 1);
+      if (indegree.get(dependentId) === 0) ready.push(pendingById.get(dependentId));
     }
   }
+  const effectiveDeadline = new Map(candidates.map(task => [task.id, task.deadline]));
+  for (const task of [...topological].reverse()) {
+    for (const prerequisiteId of prerequisites.get(task.id)) {
+      const limit = effectiveDeadline.get(task.id);
+      if (limit < effectiveDeadline.get(prerequisiteId)) effectiveDeadline.set(prerequisiteId, limit);
+    }
+  }
+  const scheduledEnd = new Map();
+  const subjectLoad = new Map();
+  const orderIndegree = new Map(candidates.map(task => [task.id, prerequisites.get(task.id).size]));
+  const readyToSchedule = candidates.filter(task => orderIndegree.get(task.id) === 0);
+  while (readyToSchedule.length) {
+    readyToSchedule.sort((a, b) => {
+      const scoreA = Number(a.exam_weight) / (1 + (subjectLoad.get(a.subject_id) || 0));
+      const scoreB = Number(b.exam_weight) / (1 + (subjectLoad.get(b.subject_id) || 0));
+      return effectiveDeadline.get(a.id).localeCompare(effectiveDeadline.get(b.id))
+        || scoreB - scoreA
+        || Number(b.priority_score || 0) - Number(a.priority_score || 0)
+        || Number(a.id) - Number(b.id);
+    });
+    const task = readyToSchedule.shift();
+    const prereqIds = prerequisites.get(task.id);
+    if (![...prereqIds].some(id => !scheduledEnd.has(id))) {
+      const prerequisiteEnd = [...prereqIds].reduce((latestDate, id) =>
+        scheduledEnd.get(id) > latestDate ? scheduledEnd.get(id) : latestDate, today());
+      const deadline = effectiveDeadline.get(task.id);
+      const dates = studyDates.filter(key => key >= prerequisiteEnd && key <= deadline);
+      let remaining = Math.max(1, Number(task.est_minutes || 0));
+      const chunks = [];
+      for (const key of dates) {
+        const available = remainingByDate.get(key);
+        if (available <= 0) continue;
+        const minutes = Math.min(available, remaining);
+        chunks.push({ date: key, minutes });
+        remaining -= minutes;
+        if (remaining <= 0) break;
+      }
+      if (remaining <= 0) {
+        for (const chunk of chunks) remainingByDate.set(chunk.date, remainingByDate.get(chunk.date) - chunk.minutes);
+        schedule[task.id] = chunks;
+        scheduledEnd.set(task.id, chunks[chunks.length - 1].date);
+        subjectLoad.set(task.subject_id, (subjectLoad.get(task.subject_id) || 0) + Number(task.est_minutes || 0));
+      }
+    }
+    for (const dependentId of dependents.get(task.id)) {
+      orderIndegree.set(dependentId, orderIndegree.get(dependentId) - 1);
+      if (orderIndegree.get(dependentId) === 0) readyToSchedule.push(pendingById.get(dependentId));
+    }
+  }
+  const scheduleWrites = [];
   for (const task of tasks) {
     if (!['pending', 'missed'].includes(task.status)) continue;
     const status = task.scheduled_date && task.scheduled_date < today() && !schedule[task.id] ? 'missed' : 'pending';
-    await put('tasks', { ...task, status, scheduled_date: schedule[task.id] || null });
+    const chunks = schedule[task.id] || [];
+    scheduleWrites.push(batchRecord('tasks', 'put', {
+      ...task,
+      status,
+      schedule_chunks: chunks,
+      scheduled_date: chunks[0]?.date || null
+    }));
   }
+  if (scheduleWrites.length) await IDB.batch(scheduleWrites);
   const unscheduled = candidates.filter(task => !schedule[task.id]).map(task => ({
     id: task.id, title: task.title, subject_id: task.subject_id, est_minutes: task.est_minutes,
     deadline: task.deadline
@@ -204,11 +276,26 @@ async function planWeek(start) {
     const date = new Date(startDate);
     date.setDate(date.getDate() + index);
     const key = dateKey(date);
-    const dayTasks = tasks.filter(task => task.status !== 'done' && task.scheduled_date === key);
+    const dayTasks = tasks.flatMap(task => {
+      if (['done', 'skipped'].includes(task.status)) return [];
+      const chunks = Array.isArray(task.schedule_chunks) ? task.schedule_chunks : [];
+      const chunkIndex = chunks.findIndex(item => item.date === key);
+      if (chunkIndex >= 0) {
+        return [{
+          ...task,
+          scheduled_minutes: Number(chunks[chunkIndex].minutes),
+          schedule_chunk_index: chunkIndex + 1,
+          schedule_chunk_count: chunks.length
+        }];
+      }
+      return task.scheduled_date === key && !chunks.length
+        ? [{ ...task, scheduled_minutes: Number(task.est_minutes || 0), schedule_chunk_index: 1, schedule_chunk_count: 1 }]
+        : [];
+    });
     return {
       date: key,
       capacity_minutes: Math.floor(Number(appSettings.daily_capacity_minutes) * (100 - Number(appSettings.buffer_pct)) / 100),
-      minutes_planned: dayTasks.reduce((sum, task) => sum + Number(task.est_minutes || 0), 0),
+      minutes_planned: dayTasks.reduce((sum, task) => sum + Number(task.scheduled_minutes || 0), 0),
       tasks: dayTasks.map(task => ({ ...task, subject_name: subjects.find(subject => subject.id === task.subject_id)?.name || '' }))
     };
   });
@@ -218,7 +305,8 @@ async function planWeek(start) {
 
 async function replanPreview(tasks, exams, appSettings, blackouts, start) {
   const pending = tasks.filter(task => ['pending', 'missed'].includes(task.status));
-  const unscheduled = pending.filter(task => !task.scheduled_date).map(task => ({
+  const unscheduled = pending.filter(task => !task.scheduled_date
+    || (Array.isArray(task.schedule_chunks) && !task.schedule_chunks.length)).map(task => ({
     id: task.id, title: task.title, subject_id: task.subject_id, est_minutes: task.est_minutes,
     deadline: task.due_date || exams.find(exam => exam.subject_id === task.subject_id)?.exam_date || ''
   }));
@@ -331,22 +419,40 @@ async function calendarMonth(month) {
     const date = `${year}-${String(monthNumber).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`;
     return {
       date,
-      task_count: tasks.filter(task => task.scheduled_date === date && task.status !== 'skipped').length,
+      task_count: tasks.filter(task => task.status !== 'skipped'
+        && (task.schedule_chunks?.length
+          ? task.schedule_chunks.some(chunk => chunk.date === date)
+          : task.scheduled_date === date)).length,
       exam_count: exams.filter(exam => exam.exam_date === date).length,
       xp: events.filter(item => item.created_at && localDay(item.created_at) === date).reduce((sum, item) => sum + Number(item.amount || 0), 0)
     };
   });
 }
 
+const batchRecord = (store, operation, value) => ({
+  store,
+  operation,
+  value: operation === 'add' && typeof value !== 'function' && value.id === undefined
+    ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'id'))
+    : value
+});
+
 async function updateTask(task, data) {
   const id = task.id;
   const updated = { ...task, ...Object.fromEntries(TASK_PATCH_KEYS.filter(key => key in data).map(key => [key, data[key]])) };
+  if ('scheduled_date' in data || 'est_minutes' in data) updated.schedule_chunks = [];
+  const operations = [];
   if (data.status === 'done' && task.status !== 'done') {
     updated.completed_at = new Date().toISOString();
     const points = { read: 10, notes: 10, practice: 15, pastpaper: 20, revise: 15, mocktest: 30, lab: 20, assignment: 20 }[task.type] || 10;
     const events = await all('xp_events');
-    if (!events.some(item => item.reason === 'Task completed' && item.ref_id === id && item.amount > 0)) {
-      await add('xp_events', { amount: points, reason: 'Task completed', ref_id: id, created_at: updated.completed_at });
+    const earned = events
+      .filter(item => item.ref_id === id && ['Task completed', 'Task unchecked'].includes(item.reason))
+      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    if (earned <= 0) {
+      operations.push(batchRecord('xp_events', 'add', {
+        amount: points, reason: 'Task completed', ref_id: id, created_at: updated.completed_at
+      }));
     }
     if (task.type === 'read' && task.topic_id) {
       const [reviews, topic] = await Promise.all([all('review_items'), byId('topics', task.topic_id)]);
@@ -355,31 +461,42 @@ async function updateTask(task, data) {
           const due = new Date();
           due.setDate(due.getDate() + interval);
           const date = dateKey(due);
-          await add('tasks', { topic_id: topic.id, subject_id: task.subject_id, type: 'revise', title: `Review: ${topic.name}`, est_minutes: 15, scheduled_date: date, due_date: date, is_revision: 1, status: 'pending', created_by: 'system' });
+          operations.push(batchRecord('tasks', 'add', {
+            topic_id: topic.id, subject_id: task.subject_id, type: 'revise', title: `Review: ${topic.name}`,
+            est_minutes: 15, scheduled_date: date, due_date: date, is_revision: 1, status: 'pending', created_by: 'system'
+          }));
         }
         const due = new Date();
         due.setDate(due.getDate() + 1);
-        await add('review_items', { topic_id: task.topic_id, ease: 2.5, interval_days: 1, next_review: dateKey(due), reps: 0 });
+        operations.push(batchRecord('review_items', 'add', {
+          topic_id: task.topic_id, ease: 2.5, interval_days: 1, next_review: dateKey(due), reps: 0
+        }));
       }
     }
   } else if (data.status && data.status !== 'done' && task.status === 'done') {
     updated.completed_at = null;
     const events = await all('xp_events');
-    const event = events.find(item => item.reason === 'Task completed' && item.ref_id === id && item.amount > 0);
-    if (event && !events.some(item => item.reason === 'Task unchecked' && item.ref_id === id)) {
-      await add('xp_events', { amount: -event.amount, reason: 'Task unchecked', ref_id: id, created_at: new Date().toISOString() });
+    const earned = events
+      .filter(item => item.ref_id === id && ['Task completed', 'Task unchecked'].includes(item.reason))
+      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    if (earned > 0) {
+      operations.push(batchRecord('xp_events', 'add', {
+        amount: -earned, reason: 'Task unchecked', ref_id: id, created_at: new Date().toISOString()
+      }));
     }
     if (task.type === 'read' && task.topic_id) {
       // Undoing a reading task also removes the reviews it created, unless one was already started.
       const [allTasks, reviews] = await Promise.all([all('tasks'), all('review_items')]);
       const autoReviews = allTasks.filter(item => item.topic_id === task.topic_id && item.is_revision && item.created_by === 'system');
       if (autoReviews.length && autoReviews.every(item => item.status === 'pending')) {
-        await Promise.all(autoReviews.map(item => remove('tasks', item.id)));
-        await Promise.all(reviews.filter(item => item.topic_id === task.topic_id).map(item => remove('review_items', item.id)));
+        operations.push(...autoReviews.map(item => batchRecord('tasks', 'delete', item.id)));
+        operations.push(...reviews.filter(item => item.topic_id === task.topic_id)
+          .map(item => batchRecord('review_items', 'delete', item.id)));
       }
     }
   } else if (data.status && data.status !== 'done') updated.completed_at = null;
-  await put('tasks', updated);
+  operations.push(batchRecord('tasks', 'put', updated));
+  await IDB.batch(operations);
   return updated;
 }
 
@@ -479,19 +596,27 @@ async function dispatch(path, method, options, query) {
       const topicIds = new Set(topics.map(item => item.id));
       const tasks = (await all('tasks')).filter(item => item.subject_id === id);
       const taskIds = new Set(tasks.map(item => item.id));
-      for (const [store, items] of [
+      const sessions = (await all('task_sessions')).filter(item => taskIds.has(item.task_id));
+      const sessionIds = new Set(sessions.map(item => item.id));
+      const xpEvents = (await all('xp_events')).filter(item =>
+        (taskIds.has(item.ref_id) && ['Task completed', 'Task unchecked'].includes(item.reason))
+        || (sessionIds.has(item.ref_id) && item.reason === 'Pomodoro completed')
+      );
+      const related = [
         ['units', units], ['topics', topics], ['tasks', tasks],
         ['exams', (await all('exams')).filter(item => item.subject_id === id)],
         ['review_items', (await all('review_items')).filter(item => topicIds.has(item.topic_id))],
-        ['task_sessions', (await all('task_sessions')).filter(item => taskIds.has(item.task_id))],
-        ['xp_events', (await all('xp_events')).filter(item => taskIds.has(item.ref_id))],
+        ['task_sessions', sessions],
+        ['xp_events', xpEvents],
         ['prereqs', (await all('prereqs')).filter(item => topicIds.has(item.topic_id) || topicIds.has(item.prereq_topic_id))],
         ['task_dependencies', (await all('task_dependencies')).filter(item => taskIds.has(item.task_id) || taskIds.has(item.prereq_task_id))],
         ['flashcards', (await all('flashcards')).filter(item => topicIds.has(item.topic_id))]
-      ]) {
-        await Promise.all(items.map(item => remove(store, item.id)));
-      }
-      await remove('subjects', id);
+      ];
+      const operations = related.flatMap(([store, items]) =>
+        items.map(item => batchRecord(store, 'delete', item.id))
+      );
+      operations.push(batchRecord('subjects', 'delete', id));
+      await IDB.batch(operations);
       return {};
     }
   }
@@ -621,7 +746,7 @@ async function dispatch(path, method, options, query) {
       const base = task.scheduled_date ? new Date(`${task.scheduled_date}T12:00:00`) : new Date();
       base.setDate(base.getDate() + Math.max(1, Math.min(30, Number(data.days || 1))));
       const scheduledDate = dateKey(base);
-      await put('tasks', { ...task, scheduled_date: scheduledDate, status: 'pending' });
+      await put('tasks', { ...task, scheduled_date: scheduledDate, schedule_chunks: [], status: 'pending' });
       return { scheduled_date: scheduledDate };
     }
     if (parts[2] === 'session' && method === 'POST') {
@@ -629,9 +754,18 @@ async function dispatch(path, method, options, query) {
       if (minutes < 1 || minutes > 240) fail('Session duration must be between 1 and 240 minutes.');
       const started = data.started_at || new Date().toISOString();
       const xp = data.completed === false ? 0 : Math.max(1, Math.floor(minutes / 5));
-      const sessionId = await add('task_sessions', { task_id: id, started_at: started, ended_at: new Date().toISOString(), minutes });
-      await put('tasks', { ...task, actual_minutes: Number(task.actual_minutes || 0) + minutes });
-      if (xp) await add('xp_events', { amount: xp, reason: 'Pomodoro completed', ref_id: sessionId, created_at: new Date().toISOString() });
+      const ended = new Date().toISOString();
+      const operations = [
+        batchRecord('task_sessions', 'add', { task_id: id, started_at: started, ended_at: ended, minutes }),
+        batchRecord('tasks', 'put', { ...task, actual_minutes: Number(task.actual_minutes || 0) + minutes })
+      ];
+      if (xp) operations.push({
+        ...batchRecord('xp_events', 'add', sessionId => ({
+          amount: xp, reason: 'Pomodoro completed', ref_id: sessionId, created_at: ended
+        })),
+        dependsOn: 0
+      });
+      await IDB.batch(operations);
       return { minutes, xp_awarded: xp };
     }
     if (parts[2] === 'skip' && method === 'POST') {

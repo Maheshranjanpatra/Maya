@@ -71,6 +71,32 @@ export const IDB = {
     });
   },
 
+  batch(operations) {
+    return new Promise((resolve, reject) => {
+      const stores = [...new Set(operations.map(item => item.store))];
+      const transaction = db.transaction(stores, 'readwrite');
+      const requests = [];
+      for (const [index, item] of operations.entries()) {
+        if (typeof item.value === 'function') {
+          const dependency = requests[item.dependsOn];
+          if (!dependency) {
+            transaction.abort();
+            reject(new Error('A batched write depends on a missing request.'));
+            return;
+          }
+          dependency.onsuccess = () => {
+            requests[index] = transaction.objectStore(item.store)[item.operation](item.value(dependency.result));
+          };
+        } else {
+          requests[index] = transaction.objectStore(item.store)[item.operation](item.value);
+        }
+      }
+      transaction.oncomplete = () => resolve(requests.map(request => request.result));
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  },
+
   async clear(store) {
     await this.write(store, 'clear');
   },

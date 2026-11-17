@@ -205,11 +205,21 @@ async function makeCalendar() {
   ]);
   const escape = value => String(value || '').replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\\;').replace(/\n/g, '\\n');
   const events = [
-    ...tasks.filter(task => task.scheduled_date).map(task => ({
-      date: task.scheduled_date.replaceAll('-', ''),
-      title: task.title,
-      description: `${task.subject_name} · ${task.est_minutes} minutes`
-    })),
+    ...tasks.flatMap(task => {
+      const chunks = Array.isArray(task.schedule_chunks) ? task.schedule_chunks : [];
+      if (chunks.length) {
+        return chunks.map((chunk, index) => ({
+          date: chunk.date.replaceAll('-', ''),
+          title: chunks.length > 1 ? `${task.title} (Part ${index + 1} of ${chunks.length})` : task.title,
+          description: `${task.subject_name} · ${chunk.minutes} minutes`
+        }));
+      }
+      return task.scheduled_date ? [{
+        date: task.scheduled_date.replaceAll('-', ''),
+        title: task.title,
+        description: `${task.subject_name} · ${task.est_minutes} minutes`
+      }] : [];
+    }),
     ...exams.map(exam => ({
       date: exam.exam_date.replaceAll('-', ''),
       title: `${exam.subject_name} ${exam.exam_type}`,
