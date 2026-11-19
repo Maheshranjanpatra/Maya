@@ -2,19 +2,31 @@ import { api } from '../api.js';
 import { showSheet, escapeHTML } from '../components/dom.js';
 import { toast } from '../components/toast.js';
 import { ICONS } from '../components/icons.js';
+import { IDB } from '../idb.js';
+import { openTaskForm } from '../views/tasks.js';
 
 const taskTypes = ['read', 'notes', 'practice', 'pastpaper', 'revise', 'mocktest', 'lab', 'assignment'];
 
 export function quickadd() {
   const input = document.querySelector('#quickadd-input');
-  if (!input) return;
+  const submit = document.querySelector('#quickadd-submit');
+  if (!input || !submit) return;
 
-  input.addEventListener('keydown', async event => {
-    if (event.key !== 'Enter' || !input.value.trim()) return;
-    event.preventDefault();
+  const add = async () => {
     const text = input.value.trim();
+    if (!text) {
+      location.hash = '#/tasks';
+      openTaskForm();
+      return;
+    }
     input.disabled = true;
+    submit.disabled = true;
     try {
+      const settings = await IDB.get('settings', 1);
+      if (!settings?.ai_api_key && !settings?.gemini_api_key) {
+        offerManualAdd(text, 'Add an AI key in Settings to parse this, or create a task manually.');
+        return;
+      }
       const parsed = await api('/api/ai/quickadd', {
         method: 'POST',
         body: JSON.stringify({ text })
@@ -22,11 +34,30 @@ export function quickadd() {
       await confirmQuickAdd(parsed, text);
       input.value = '';
     } catch (error) {
-      toast(error.message);
+      offerManualAdd(text, error.message);
     } finally {
       input.disabled = false;
+      submit.disabled = false;
       input.focus();
     }
+  };
+
+  input.addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    add();
+  });
+  submit.addEventListener('click', add);
+}
+
+function offerManualAdd(text, message) {
+  toast(message, {
+    label: 'Add task manually',
+    action: () => {
+      location.hash = '#/tasks';
+      openTaskForm(text).catch(error => toast(error.message));
+    },
+    duration: 0
   });
 }
 

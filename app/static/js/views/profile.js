@@ -26,7 +26,7 @@ export async function render(container) {
       <section class="grid grid-2">
         <article class="card chart-card"><p class="eyebrow">Last 12 weeks</p><h2>Study consistency</h2><canvas id="profile-heatmap" height="140" aria-label="Study consistency heatmap"></canvas></article>
         <article class="card chart-card"><p class="eyebrow">Last 12 weeks</p><h2>XP trend</h2><canvas id="profile-xp-trend" height="140" aria-label="XP trend"></canvas></article>
-        <article class="card"><p class="eyebrow">Weekly review</p><h2>This week, so far</h2><p id="weekly-review" class="muted"></p><div id="weekly-progress" class="progress-track"><span></span></div></article>
+        <article class="card"><p class="eyebrow">Weekly review</p><h2>This week, so far</h2><p id="weekly-review" class="muted"></p><p id="weekly-goal-label" class="hint"></p><div id="weekly-progress" class="progress-track" role="progressbar" aria-label="Weekly study goal progress" aria-valuemin="0" aria-valuemax="100"><span></span></div></article>
         <article class="card"><p class="eyebrow">Your rhythm</p><h2>Time-of-day insight</h2><p id="time-insight" class="muted"></p></article>
       </section>
       <section class="card"><div class="section-heading"><div><p class="eyebrow">Keep showing up</p><h2>Badges</h2></div><span class="pill" id="badge-count"></span></div><div class="badge-grid" id="badges"></div></section>
@@ -62,8 +62,13 @@ function renderProfile(container, profile, overview, days) {
   container.querySelector('#weekly-review').textContent =
     `${weeklyHours} hours studied this week, compared with ${lastHours} hours last week. ${Number(profile.tasks_completed)} tasks completed so far.`;
   const goal = Math.max(1, Number((overview.settings || {}).weekly_goal || 5) * 60);
+  const goalHours = goal / 60;
+  const progressPercent = Math.min(100, Number(overview.total_minutes_this_week || 0) / goal * 100);
+  container.querySelector('#weekly-goal-label').textContent =
+    `${weeklyHours} of ${goalHours} hours`;
   container.querySelector('#weekly-progress span').style.width =
-    `${Math.min(100, Number(overview.total_minutes_this_week || 0) / goal * 100)}%`;
+    `${progressPercent}%`;
+  container.querySelector('#weekly-progress').setAttribute('aria-valuenow', String(Math.round(progressPercent)));
 
   const peak = overview.time_of_day_peak;
   container.querySelector('#time-insight').textContent = peak == null

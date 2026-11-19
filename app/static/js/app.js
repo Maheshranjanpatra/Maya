@@ -125,9 +125,9 @@ async function setupApp() {
 document.addEventListener('keydown', event => {
   if (
     !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)
-    && ['1', '2', '3', '4'].includes(event.key)
+    && ['1', '2', '3', '4', '5'].includes(event.key)
   ) {
-    location.hash = `#/${['tasks', 'syllabus', 'visuals', 'profile'][Number(event.key) - 1]}`;
+    location.hash = `#/${['tasks', 'syllabus', 'visuals', 'profile', 'help'][Number(event.key) - 1]}`;
   }
 });
 
@@ -146,4 +146,10 @@ document.querySelector('[data-dismiss]').addEventListener('click', () => {
   document.querySelector('#install-banner').hidden = true;
 });
 
-setupApp();
+setupApp().catch(error => {
+  console.error('Maya failed to start:', error);
+  const container = document.querySelector('#view-container');
+  container.innerHTML = '<section class="card empty-state" role="alert"><h2>Maya could not start</h2><p class="muted"></p><button class="button button-quiet" data-retry>Reload Maya</button></section>';
+  container.querySelector('.muted').textContent = error.message || 'An unexpected startup error occurred.';
+  container.querySelector('[data-retry]').addEventListener('click', () => location.reload());
+});

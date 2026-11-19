@@ -8,7 +8,7 @@ const sections = [
   ['Reschedule a plan', 'Open Plan and drag a task to another day. On touch screens, use the task’s Move button. A task that cannot fit remains visible instead of disappearing.'],
   ['Set up AI tools', 'Add an API key and choose a model in Settings. Model access and usage limits depend on your provider account. Without a key, all non-AI features still work.'],
   ['Offline and backup', 'Your study data is saved in this browser with IndexedDB, so planning, tasks, and progress remain available offline. Use Settings to export an ICS calendar or a full JSON backup.'],
-  ['Keyboard shortcuts', 'Press Ctrl/Cmd+K to open the command palette. Keys 1–4 open Tasks, Syllabus, Visuals, and Profile when you are not typing in a field. Press Escape to close a sheet or palette.'],
+  ['Keyboard shortcuts', 'Press Ctrl/Cmd+K to open the command palette. Keys 1–5 open Tasks, Syllabus, Visuals, Profile, and Help when you are not typing in a field. Press Escape to close a sheet or palette.'],
   ['Privacy', 'Maya does not upload or sync study data. Your records stay in this browser on this device. When you request an AI action, only the content needed for that action is sent to Google using your key; Maya does not keep a server-side copy.']
 ];
 

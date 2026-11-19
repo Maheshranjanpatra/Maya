@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDB } from '../app/static/js/idb.js';
 import { localApi } from '../app/static/js/local-api.js';
+import { startTimer } from '../app/static/js/features/timer.js';
 
 globalThis.location = { origin: 'http://localhost' };
 
@@ -23,6 +24,11 @@ function seed(data = {}) {
   IDB.all = async name => structuredClone(stores[name] || []);
   IDB.get = async (name, id) => structuredClone(stores[name]?.find(item => item.id === id));
   IDB.write = async (name, operation, value) => applyOperation(name, operation, value);
+  IDB.replaceAll = async data => {
+    for (const name of Object.keys(stores)) {
+      if (name !== 'queue') stores[name] = structuredClone(data[name] || []);
+    }
+  };
   IDB.batch = async operations => {
     const snapshot = structuredClone(stores);
     try {
@@ -180,4 +186,152 @@ test('a failed Pomodoro XP write rolls back its session and task update', async 
   assert.equal(stores.task_sessions.length, 0);
   assert.equal(stores.tasks[0].actual_minutes, 0);
   assert.equal(stores.xp_events.length, 0);
+});
+
+test('invalid backups are rejected without replacing local study data', async () => {
+  seed({
+    subjects: [{ id: 1, name: 'Math' }],
+    tasks: [{ id: 1, title: 'Review', status: 'pending' }]
+  });
+  const before = structuredClone(stores);
+
+  await assert.rejects(
+    request('/api/import/backup', 'POST', {
+      subjects: [{ id: 2, name: 'Physics' }],
+      tasks: [{ id: 2, title: 'Practice', status: 'pending' }],
+      settings: { theme: 'dark' }
+    }),
+    /invalid settings data/
+  );
+
+  assert.deepEqual(stores, before);
+  await assert.rejects(
+    request('/api/import/backup', 'POST', {
+      subjects: [],
+      tasks: [],
+      settings: [{ id: 1, daily_capacity_minutes: 0 }]
+    }),
+    /Daily study capacity must be between 15 and 720 minutes/
+  );
+  assert.deepEqual(stores, before);
+  await assert.rejects(
+    request('/api/import/backup', 'POST', {
+      subjects: [],
+      tasks: [{ id: 1 }, { id: 1 }]
+    }),
+    /duplicate IDs in tasks/
+  );
+  assert.deepEqual(stores, before);
+});
+
+test('restoring a valid backup replaces data and preserves local AI credentials', async () => {
+  seed({
+    subjects: [{ id: 1, name: 'Math' }],
+    settings: [{ id: 1, ai_api_key: 'local-key', theme: 'light' }]
+  });
+
+  await request('/api/import/backup', 'POST', {
+    subjects: [{ id: 2, name: 'Physics' }],
+    tasks: [{ id: 3, title: 'Practice', status: 'pending' }],
+    settings: [{ id: 1, theme: 'dark' }]
+  });
+
+  assert.deepEqual(stores.subjects, [{ id: 2, name: 'Physics' }]);
+  assert.deepEqual(stores.tasks, [{ id: 3, title: 'Practice', status: 'pending' }]);
+  assert.equal(stores.settings[0].theme, 'dark');
+  assert.equal(stores.settings[0].ai_api_key, 'local-key');
+});
+
+test('profile keeps yesterday streaks and reports the historical best streak', async () => {
+  const completed = offset => {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() + offset);
+    return date.toISOString();
+  };
+  seed({
+    tasks: [
+      { id: 1, status: 'done', completed_at: completed(-5) },
+      { id: 2, status: 'done', completed_at: completed(-4) },
+      { id: 3, status: 'done', completed_at: completed(-3) },
+      { id: 4, status: 'done', completed_at: completed(-1) }
+    ]
+  });
+
+  const profile = await request('/api/profile');
+
+  assert.equal(profile.streak, 1);
+  assert.equal(profile.streak_best, 3);
+});
+
+test('invalid planning settings are rejected without changing saved settings', async () => {
+  seed({
+    settings: [{
+      id: 1,
+      daily_capacity_minutes: 120,
+      study_days: [1, 2, 3],
+      weekly_goal: 5,
+      theme: 'light'
+    }]
+  });
+
+  await assert.rejects(
+    request('/api/settings', 'PATCH', { daily_capacity_minutes: 0, study_days: [] }),
+    /Daily study capacity must be between 15 and 720 minutes/
+  );
+  assert.equal(stores.settings[0].daily_capacity_minutes, 120);
+  assert.deepEqual(stores.settings[0].study_days, [1, 2, 3]);
+});
+
+test('invalid review grades do not corrupt the review schedule', async () => {
+  seed({
+    review_items: [{
+      id: 1,
+      topic_id: 3,
+      ease: 2.5,
+      interval_days: 1,
+      next_review: '2099-01-01',
+      reps: 0
+    }]
+  });
+  const before = structuredClone(stores.review_items);
+
+  await assert.rejects(
+    request('/api/reviews/1/grade', 'POST', { quality: 'invalid' }),
+    /Choose Again, Hard, Good, or Easy/
+  );
+
+  assert.deepEqual(stores.review_items, before);
+});
+
+test('focus timer counts elapsed time instead of delayed interval ticks', () => {
+  const originalNow = Date.now;
+  const originalWindow = globalThis.window;
+  let now = 1000;
+  let tick;
+  let completed = 0;
+  globalThis.window = {
+    setInterval(callback) {
+      tick = callback;
+      return 1;
+    },
+    clearInterval() {}
+  };
+  Date.now = () => now;
+
+  try {
+    const timer = startTimer(10, () => { completed += 1; });
+    timer.start();
+    now += 5500;
+    tick();
+    assert.equal(timer.remaining, 5);
+    now += 4500;
+    tick();
+    assert.equal(timer.remaining, 0);
+    assert.equal(completed, 1);
+  } finally {
+    Date.now = originalNow;
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
 });

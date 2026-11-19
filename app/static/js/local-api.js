@@ -2,6 +2,11 @@ import { IDB } from './idb.js';
 
 const TASK_TYPES = new Set(['read', 'notes', 'practice', 'pastpaper', 'revise', 'mocktest', 'lab', 'assignment']);
 const EXAM_TYPES = new Set(['midterm', 'final', 'quiz', 'practical']);
+const BACKUP_STORES = [
+  'tasks', 'subjects', 'units', 'topics', 'prereqs', 'task_dependencies',
+  'exams', 'blackouts', 'review_items', 'task_sessions', 'xp_events',
+  'badges', 'settings', 'flashcards'
+];
 const DEFAULT_SETTINGS = {
   id: 1,
   daily_capacity_minutes: 120,
@@ -50,6 +55,60 @@ const scopeUnits = exam => {
   try { return JSON.parse(value).map(Number); }
   catch { return []; }
 };
+
+function validateBackup(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)
+    || !Array.isArray(data.subjects) || !Array.isArray(data.tasks)) {
+    fail('This is not a valid Maya backup.');
+  }
+  for (const store of BACKUP_STORES) {
+    if (!Object.hasOwn(data, store)) continue;
+    if (!Array.isArray(data[store])) fail(`The backup contains invalid ${store} data.`);
+    const ids = new Set();
+    for (const record of data[store]) {
+      const validId = typeof record?.id === 'string'
+        ? record.id.trim().length > 0
+        : Number.isSafeInteger(record?.id) && record.id > 0;
+      if (!record || typeof record !== 'object' || Array.isArray(record) || !validId) {
+        fail(`The backup contains an invalid record in ${store}.`);
+      }
+      if (ids.has(record.id)) fail(`The backup contains duplicate IDs in ${store}.`);
+      ids.add(record.id);
+    }
+  }
+}
+
+function validateSettings(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) fail('Settings must be an object.');
+  const validated = { ...data };
+  if ('daily_capacity_minutes' in validated) {
+    const minutes = Number(validated.daily_capacity_minutes);
+    if (!Number.isInteger(minutes) || minutes < 15 || minutes > 720) {
+      fail('Daily study capacity must be between 15 and 720 minutes.');
+    }
+    validated.daily_capacity_minutes = minutes;
+  }
+  if ('daily_goal' in validated) {
+    const goal = Number(validated.daily_goal);
+    if (!Number.isInteger(goal) || goal < 1 || goal > 20) fail('Daily task goal must be between 1 and 20.');
+    validated.daily_goal = goal;
+  }
+  if ('weekly_goal' in validated) {
+    const goal = Number(validated.weekly_goal);
+    if (!Number.isInteger(goal) || goal < 1 || goal > 40) fail('Weekly study goal must be between 1 and 40 hours.');
+    validated.weekly_goal = goal;
+  }
+  if ('study_days' in validated
+    && (!Array.isArray(validated.study_days) || !validated.study_days.length
+      || validated.study_days.some(day => !Number.isInteger(day) || day < 0 || day > 6)
+      || new Set(validated.study_days).size !== validated.study_days.length)) {
+    fail('Choose at least one valid study day.');
+  }
+  if ('theme' in validated && !['auto', 'light', 'dark'].includes(validated.theme)) {
+    fail('Choose Auto, Light, or Dark for the theme.');
+  }
+  return validated;
+}
 
 async function subjectRows() {
   const [subjects, units, topics] = await Promise.all([all('subjects'), all('units'), all('topics')]);
@@ -324,14 +383,23 @@ async function profile() {
   while (50 * level * (level - 1) <= total) level += 1;
   level -= 1;
   const into = total - 50 * (level - 1) * level;
-  const doneDays = [...new Set(tasks.filter(task => task.status === 'done' && task.completed_at).map(task => localDay(task.completed_at)))].sort().reverse();
-  const current = new Date(`${today()}T00:00:00`);
+  const doneDays = [...new Set(tasks.filter(task => task.status === 'done' && task.completed_at).map(task => localDay(task.completed_at)))].sort();
+  const doneDaySet = new Set(doneDays);
+  const expectedCurrentDay = new Date(`${today()}T12:00:00`);
+  if (!doneDaySet.has(today())) expectedCurrentDay.setDate(expectedCurrentDay.getDate() - 1);
   let streak = 0;
-  for (const day of doneDays) {
-    const expected = new Date(current);
-    expected.setDate(expected.getDate() - streak);
-    if (day !== dateKey(expected)) break;
+  while (doneDaySet.has(dateKey(expectedCurrentDay))) {
     streak += 1;
+    expectedCurrentDay.setDate(expectedCurrentDay.getDate() - 1);
+  }
+  let streakBest = 0;
+  let streakRun = 0;
+  let previousDay;
+  for (const day of doneDays) {
+    const currentDay = new Date(`${day}T12:00:00`);
+    streakRun = previousDay && currentDay - previousDay === 86400000 ? streakRun + 1 : 1;
+    streakBest = Math.max(streakBest, streakRun);
+    previousDay = currentDay;
   }
   return {
     level,
@@ -340,7 +408,7 @@ async function profile() {
     xp_for_next: 100 * level,
     title: level < 4 ? 'Novice' : level < 7 ? 'Apprentice' : level < 10 ? 'Scholar' : level < 15 ? 'Adept' : level < 20 ? 'Expert' : level < 30 ? 'Master' : 'Sage',
     streak,
-    streak_best: streak,
+    streak_best: streakBest,
     tasks_completed: tasks.filter(task => task.status === 'done').length,
     minutes_studied: sessions.reduce((sum, item) => sum + Number(item.minutes || 0), 0),
     badges
@@ -555,8 +623,9 @@ async function dispatch(path, method, options, query) {
     };
   }
   if (path === '/api/settings' && method === 'PATCH') {
+    const validated = validateSettings(data);
     const current = await settings();
-    await saveSettings({ ...current, ...data, study_days: data.study_days || current.study_days });
+    await saveSettings({ ...current, ...validated, study_days: validated.study_days || current.study_days });
     return {};
   }
   if (parts[0] === 'subjects') {
@@ -801,7 +870,8 @@ async function dispatch(path, method, options, query) {
     if (method === 'POST') {
       const review = await byId('review_items', Number(parts[1]));
       if (!review) fail('Review not found.', 404);
-      const quality = Math.max(0, Math.min(5, Number(data.quality || 3)));
+      const quality = Number(data.quality);
+      if (![1, 3, 4, 5].includes(quality)) fail('Choose Again, Hard, Good, or Easy.');
       const ease = Math.max(1.3, Number(review.ease || 2.5) + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
       const interval = quality < 3 ? 1 : Number(review.reps) === 0 ? 1 : Number(review.reps) === 1 ? 6 : Math.max(1, Math.round(Number(review.interval_days) * ease));
       const next = new Date(`${today()}T12:00:00`); next.setDate(next.getDate() + interval);
@@ -833,9 +903,9 @@ async function dispatch(path, method, options, query) {
   }
   if (parts[0] === 'export' && parts[1] === 'backup' && method === 'GET') return await IDB.exportAll();
   if (parts[0] === 'import' && parts[1] === 'backup' && method === 'POST') {
-    if (!data || typeof data !== 'object' || !Array.isArray(data.subjects) || !Array.isArray(data.tasks)) fail('This is not a valid Maya backup.');
+    validateBackup(data);
     const currentSettings = await settings();
-    const importedSettings = data.settings?.[0] || {};
+    const importedSettings = validateSettings(data.settings?.[0] || {});
     await IDB.replaceAll({
       ...data,
       settings: [{

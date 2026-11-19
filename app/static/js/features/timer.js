@@ -2,6 +2,7 @@ export function startTimer(seconds = 25 * 60, onDone = () => {}, onTick = () => 
   let remaining = seconds;
   let interval;
   let running = false;
+  let deadline = 0;
 
   const timer = {
     get remaining() {
@@ -13,8 +14,9 @@ export function startTimer(seconds = 25 * 60, onDone = () => {}, onTick = () => 
     start() {
       if (running) return;
       running = true;
+      deadline = Date.now() + remaining * 1000;
       interval = window.setInterval(() => {
-        remaining = Math.max(0, remaining - 1);
+        remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
         onTick(remaining);
         if (remaining === 0) {
           timer.pause();
@@ -23,6 +25,10 @@ export function startTimer(seconds = 25 * 60, onDone = () => {}, onTick = () => 
       }, 1000);
     },
     pause() {
+      if (running) {
+        remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+        onTick(remaining);
+      }
       running = false;
       window.clearInterval(interval);
     },

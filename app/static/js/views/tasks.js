@@ -15,9 +15,10 @@ const localDateKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1
 export async function render(container) {
   container.innerHTML = `
     <header class="view-heading">
-      <div><p class="eyebrow">Make today count</p><h1>Tasks</h1><p>One small step at a time.</p></div>
+      <div><p class="eyebrow">Today at a glance</p><h1>Study dashboard</h1><p>Start with what matters today, then take one small step at a time.</p></div>
       <button class="button" id="add-task"><span aria-hidden="true">+</span> Add task</button>
     </header>
+    <section id="dashboard-summary" class="dashboard-summary" aria-label="Study dashboard"></section>
     <section class="view-stack">
       <div class="card timer-widget">
         <div><p class="eyebrow">Focus session</p><h2>25 minutes, one task</h2><p class="muted">Stay with one thing until the timer ends.</p></div>
@@ -35,7 +36,7 @@ export async function render(container) {
       <div id="task-list" class="task-list" aria-live="polite"></div>
     </section>`;
 
-  container.querySelector('#add-task').addEventListener('click', () => openTaskForm(container));
+  container.querySelector('#add-task').addEventListener('click', () => openTaskForm());
   container.querySelector('#start-focus').addEventListener('click', () => openTimer(container));
 
   try {
@@ -69,6 +70,43 @@ export async function render(container) {
   });
 }
 
+function drawDashboard(container) {
+  const today = localDateKey(new Date());
+  const active = taskCache.filter(task => !['done', 'skipped'].includes(task.status));
+  const dueToday = active.filter(task => {
+    const chunks = Array.isArray(task.schedule_chunks) ? task.schedule_chunks : [];
+    return task.scheduled_date === today
+      || task.due_date === today
+      || chunks.some(chunk => chunk.date === today);
+  });
+  const overdue = active.filter(task => {
+    const chunks = Array.isArray(task.schedule_chunks) ? task.schedule_chunks : [];
+    const lastScheduledDate = chunks.length ? chunks.at(-1).date : task.scheduled_date;
+    return (task.due_date && task.due_date < today)
+      || (lastScheduledDate && lastScheduledDate < today);
+  });
+  const reviews = active.filter(task => task.is_due_revision);
+  const summary = container.querySelector('#dashboard-summary');
+  summary.innerHTML = `
+    <button class="dashboard-stat" type="button" data-dashboard-filter="today">
+      <span class="eyebrow">On today's plan</span><strong>${dueToday.length}</strong><span class="muted">study tasks</span>
+    </button>
+    <button class="dashboard-stat" type="button" data-dashboard-filter="overdue">
+      <span class="eyebrow">Needs attention</span><strong>${overdue.length}</strong><span class="muted">overdue tasks</span>
+    </button>
+    <a class="dashboard-stat" href="#/reviews">
+      <span class="eyebrow">Keep it fresh</span><strong>${reviews.length}</strong><span class="muted">reviews due</span>
+    </a>
+    <a class="dashboard-stat dashboard-stat-action" href="#/plan">
+      <span class="eyebrow">Looking ahead</span><strong>Study plan</strong><span class="muted">Review your week</span>
+    </a>`;
+  summary.querySelectorAll('[data-dashboard-filter]').forEach(button => button.addEventListener('click', () => {
+    container.querySelector('#task-filter').value = button.dataset.dashboardFilter;
+    drawTasks(container);
+    container.querySelector('#task-list').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+}
+
 function populateSubjectFilter(container) {
   const select = container.querySelector('#subject-filter');
   select.innerHTML = '<option value="">All subjects</option>' + subjectsCache.map(subject =>
@@ -91,8 +129,8 @@ function filteredTasks(container) {
     const matchesStatus = filter === 'all'
       || (filter === 'done' && task.status === 'done')
       || (filter === 'active' && ['pending', 'missed'].includes(task.status))
-      || (filter === 'today' && active && (task.scheduled_date === today || hasTodayChunk))
-      || (filter === 'overdue' && active && lastScheduledDate < today);
+      || (filter === 'today' && active && (task.scheduled_date === today || task.due_date === today || hasTodayChunk))
+      || (filter === 'overdue' && active && ((task.due_date && task.due_date < today) || (lastScheduledDate && lastScheduledDate < today)));
     return matchesText && matchesSubject && matchesStatus;
   }).sort((a, b) => {
     const aPinned = a.status !== 'skipped' && (a.is_due_revision || (a.is_revision && a.scheduled_date <= today && a.status !== 'done'));
@@ -104,6 +142,7 @@ function filteredTasks(container) {
 }
 
 function drawTasks(container) {
+  drawDashboard(container);
   const list = container.querySelector('#task-list');
   const tasks = filteredTasks(container);
   if (!tasks.length) {
@@ -379,7 +418,7 @@ async function undoBulkComplete(container, ids, previousStatuses) {
   }
 }
 
-async function openTaskForm(container) {
+export async function openTaskForm(initialTitle = '') {
   try {
     if (!subjectsCache.length) {
       const response = await api('/api/subjects');
@@ -396,7 +435,7 @@ async function openTaskForm(container) {
     <div class="sheet-handle" aria-hidden="true"></div>
     <div class="sheet-heading"><div><p class="eyebrow">Keep it small</p><h2>Add a task</h2></div><button class="icon-button" data-close-sheet aria-label="Close">${ICONS.close}</button></div>
     <form id="new-task-form" class="form-grid">
-      <label class="span-2">Task name<input name="title" required maxlength="200" placeholder="Review lecture notes"></label>
+      <label class="span-2">Task name<input name="title" value="${escapeHTML(initialTitle)}" required maxlength="200" placeholder="Review lecture notes"></label>
       <label>Subject<select name="subject_id" required>${options || '<option value="">Create a subject first</option>'}</select></label>
       <label>Task type<select name="type">${TYPES.map(type => `<option value="${type}">${type}</option>`).join('')}</select></label>
       <label>Estimate (minutes)<input name="est_minutes" type="number" min="5" max="600" value="30" required></label>

@@ -40,6 +40,11 @@
   background: var(--surface);
 }
 
+.quickadd-submit {
+  min-height: 44px;
+  padding: 8px 12px;
+}
+
 .palette-button {
   width: auto;
   padding: 0 10px;
@@ -212,7 +217,7 @@
   inset: auto 0 0;
   display: grid;
   height: calc(var(--nav-height) + env(safe-area-inset-bottom));
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   padding: 4px 6px env(safe-area-inset-bottom);
   border-top: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface) 96%, transparent);

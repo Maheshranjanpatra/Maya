@@ -18,7 +18,7 @@ export async function render(container) {
         <div class="form-grid"><label>Study time per day (minutes)<input id="capacity" type="number" min="15" max="720" step="15"></label>
           <label>Theme<select id="theme"><option value="auto">Auto (system)</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
           <fieldset class="span-2 study-days"><legend>Study days</legend><div class="study-day-grid">${weekdays.map(([label, day]) => `<label><input type="checkbox" value="${day}" data-study-day><span>${label}</span></label>`).join('')}</div></fieldset>
-          <label>Weekly study goal (days)<input id="weekly-goal" type="number" min="1" max="7"></label>
+          <label>Weekly study goal (hours)<input id="weekly-goal" type="number" min="1" max="40"></label>
           <label>Daily task goal<input id="daily-goal" type="number" min="1" max="20"></label>
         </div>
         <div class="split-actions"><button class="button" id="save-planning">Save planning</button><button class="button button-quiet" id="replan">Rebuild my plan</button></div>
