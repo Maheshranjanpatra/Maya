@@ -21,8 +21,14 @@ export async function render(container) {
     <section id="dashboard-summary" class="dashboard-summary" aria-label="Study dashboard"></section>
     <section class="view-stack">
       <div class="card timer-widget">
-        <div><p class="eyebrow">Focus session</p><h2>25 minutes, one task</h2><p class="muted">Stay with one thing until the timer ends.</p></div>
-        <button class="button button-quiet" id="start-focus">Start focus</button>
+        <div><p class="eyebrow">Focus session</p><h2>Choose your focus time</h2><p class="muted">Pick a quick session or make one your own.</p></div>
+        <div class="focus-quickstarts" aria-label="Quick-start focus sessions">
+          <button type="button" class="button button-quiet" data-quick-focus="15">15 min</button>
+          <button type="button" class="button button-quiet" data-quick-focus="25">25 min</button>
+          <button type="button" class="button button-quiet" data-quick-focus="45">45 min</button>
+          <button type="button" class="button button-quiet" data-quick-focus="60">60 min</button>
+          <button type="button" class="button" id="start-focus">Custom</button>
+        </div>
       </div>
       <div class="task-filters">
         <input class="search-field" id="task-search" type="search" placeholder="Search tasks or subjects" aria-label="Search tasks">
@@ -38,6 +44,9 @@ export async function render(container) {
 
   container.querySelector('#add-task').addEventListener('click', () => openTaskForm());
   container.querySelector('#start-focus').addEventListener('click', () => openTimer(container));
+  container.querySelectorAll('[data-quick-focus]').forEach(button => {
+    button.addEventListener('click', () => openTimer(container, undefined, Number(button.dataset.quickFocus), true));
+  });
 
   try {
     const [tasksResult, subjectResult] = await Promise.all([
@@ -459,66 +468,230 @@ export async function openTaskForm(initialTitle = '') {
   });
 }
 
-function openTimer(container, initialTaskId) {
+function openTimer(container, initialTaskId, initialMinutes = 25, startImmediately = false) {
   const pending = taskCache.filter(task => task.status !== 'done');
   const options = pending.map(task =>
     `<option value="${task.id}" ${task.id === initialTaskId ? 'selected' : ''}>${escapeHTML(task.title)}</option>`
   ).join('');
   let timer;
+  let durationMinutes = initialMinutes;
+  let focusStartedAt;
+  let completed = false;
+  let sessionSavePending = false;
+  let sessionSavePromise;
+  let confirmationStep = 0;
+  const protectActiveFocus = event => {
+    if (focusStartedAt && (!completed || sessionSavePending)) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+  };
   const sheet = showSheet(`
     <div class="sheet-handle" aria-hidden="true"></div>
     <div class="sheet-heading"><div><p class="eyebrow">Focus mode</p><h2 id="timer-phase">Focus</h2></div><button class="icon-button" data-close-sheet aria-label="Close">${ICONS.close}</button></div>
     <label>Study task<select id="timer-task">${options || '<option value="">Unlinked focus session</option>'}</select></label>
-    <div class="timer-face"><span id="timer-display" class="timer-clock">25:00</span><span id="timer-caption" class="muted">Focus session</span></div>
-    <div class="split-actions"><button id="timer-start" class="button">Start</button><button id="timer-pause" class="button button-quiet">Pause</button><button id="timer-reset" class="button button-quiet">Reset</button></div>`, () => timer?.pause());
-  let phase = 'focus';
-  let focusStartedAt;
+    <fieldset class="focus-duration">
+      <legend>Focus duration</legend>
+      <div class="focus-presets" role="group" aria-label="Choose a focus duration">
+        ${[15, 25, 45, 60].map(minutes => `<button type="button" class="button button-quiet" data-duration="${minutes}" aria-pressed="${minutes === durationMinutes}">${minutes} min</button>`).join('')}
+      </div>
+      <form id="custom-duration-form" class="custom-duration">
+        <label for="custom-duration">Custom (1–240 minutes)</label>
+        <input id="custom-duration" type="number" min="1" max="240" step="1" value="${durationMinutes}" required>
+        <button type="submit" class="button button-quiet">Set</button>
+      </form>
+    </fieldset>
+    <div class="timer-face">
+      <div class="timer-ring" id="timer-ring" role="progressbar" aria-label="Focus time remaining" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="timer-ring-track" cx="60" cy="60" r="52"></circle>
+          <circle class="timer-ring-progress" id="timer-progress" cx="60" cy="60" r="52"></circle>
+        </svg>
+        <div class="timer-ring-content"><span id="timer-display" class="timer-clock">25:00</span><span id="timer-caption" class="muted">25 minutes to go</span></div>
+      </div>
+    </div>
+    <div class="focus-controls">
+      <button id="timer-start" class="button">Start focus</button>
+      <button id="timer-pause" class="button button-quiet" hidden>Pause</button>
+      <button id="timer-resume" class="button" hidden>Resume</button>
+      <button id="timer-end" class="button button-danger" hidden>End session</button>
+    </div>
+    <div id="timer-confirmation" class="focus-confirmation" role="group" aria-labelledby="timer-confirmation-title" hidden>
+      <h3 id="timer-confirmation-title"></h3>
+      <p class="muted" id="timer-confirmation-copy"></p>
+      <div class="focus-controls">
+        <button type="button" class="button button-quiet" id="timer-keep-going">Keep focusing</button>
+        <button type="button" class="button button-danger" id="timer-confirm-end"></button>
+      </div>
+    </div>`, () => {
+    timer?.pause();
+    window.removeEventListener('beforeunload', protectActiveFocus);
+  }, {
+    onRequestClose: () => {
+      if (!focusStartedAt || (completed && !sessionSavePending)) return true;
+      requestEndConfirmation();
+      return false;
+    }
+  });
+  window.addEventListener('beforeunload', protectActiveFocus);
   const display = sheet.root.querySelector('#timer-display');
   const pauseButton = sheet.root.querySelector('#timer-pause');
   const startButton = sheet.root.querySelector('#timer-start');
-  const resetButton = sheet.root.querySelector('#timer-reset');
-  const start = () => {
-    if (!timer) {
-      timer = startTimer(phase === 'focus' ? 25 * 60 : 5 * 60, complete, tick);
-    }
-    if (phase === 'focus' && !focusStartedAt) focusStartedAt = new Date().toISOString();
-    timer.start();
+  const resumeButton = sheet.root.querySelector('#timer-resume');
+  const endButton = sheet.root.querySelector('#timer-end');
+  const progress = sheet.root.querySelector('#timer-progress');
+  const progressRing = sheet.root.querySelector('#timer-ring');
+  const caption = sheet.root.querySelector('#timer-caption');
+  const confirmation = sheet.root.querySelector('#timer-confirmation');
+  const circumference = 2 * Math.PI * 52;
+  const durationButtons = [...sheet.root.querySelectorAll('[data-duration]')];
+  const customDuration = sheet.root.querySelector('#custom-duration');
+  const tick = remaining => {
+    display.textContent = formatTime(remaining);
+    const elapsed = durationMinutes * 60 - remaining;
+    const percent = Math.max(0, Math.min(100, elapsed / (durationMinutes * 60) * 100));
+    progress.style.strokeDashoffset = String(circumference * percent / 100);
+    progressRing.setAttribute('aria-valuenow', String(Math.round(100 - percent)));
+    caption.textContent = remaining === 0
+      ? 'Session complete'
+      : `${Math.ceil(remaining / 60)} ${Math.ceil(remaining / 60) === 1 ? 'minute' : 'minutes'} to go`;
+    updateControls();
   };
-  const tick = remaining => { display.textContent = formatTime(remaining); };
+  const updateControls = () => {
+    const running = Boolean(timer?.running);
+    startButton.hidden = running || (Boolean(focusStartedAt) && !completed);
+    pauseButton.hidden = !running;
+    resumeButton.hidden = running || !focusStartedAt || completed;
+    endButton.hidden = !focusStartedAt || completed;
+    const durationLocked = Boolean(focusStartedAt) && (!completed || sessionSavePending);
+    durationButtons.forEach(button => { button.disabled = durationLocked; });
+    customDuration.disabled = durationLocked;
+    sheet.root.querySelector('#custom-duration-form button').disabled = durationLocked;
+  };
+  const saveSession = async (minutes, isCompleted) => {
+    const taskId = Number(sheet.root.querySelector('#timer-task').value);
+    if (!taskId || minutes < 1) return true;
+    if (sessionSavePromise) return sessionSavePromise;
+    sessionSavePromise = api(`/api/tasks/${taskId}/session`, {
+        method: 'POST',
+        body: JSON.stringify({ minutes, completed: isCompleted, started_at: focusStartedAt })
+      }).then(() => true)
+      .catch(error => {
+        toast(`Focus time could not be saved: ${error.message}`);
+        return false;
+      })
+      .finally(() => { sessionSavePromise = null; });
+    return sessionSavePromise;
+  };
   const complete = async () => {
-    if (phase === 'focus') {
-      const taskId = Number(sheet.root.querySelector('#timer-task').value);
-      if (taskId) {
-        try {
-          await api(`/api/tasks/${taskId}/session`, {
-            method: 'POST',
-            body: JSON.stringify({ minutes: 25, completed: true, started_at: focusStartedAt })
-          });
-        } catch (error) {
-          toast(error.message);
-        }
-      }
-      if (!sheet.root.contains(display)) return;
-      if (navigator.vibrate) navigator.vibrate([30, 60, 30]);
-      phase = 'break';
-      sheet.root.querySelector('#timer-phase').textContent = 'Break';
-      sheet.root.querySelector('#timer-caption').textContent = 'Five minutes to reset';
+    completed = true;
+    sheet.root.querySelector('#timer-phase').textContent = 'Focus complete';
+    const hasTask = Boolean(Number(sheet.root.querySelector('#timer-task').value));
+    sessionSavePending = hasTask;
+    const saved = await saveSession(durationMinutes, true);
+    sessionSavePending = !saved && hasTask;
+    if (!saved) {
+      startButton.textContent = 'Retry saving session';
+      if (sessionSavePending) startButton.dataset.retrySave = 'true';
     } else {
-      phase = 'focus';
-      focusStartedAt = null;
-      sheet.root.querySelector('#timer-phase').textContent = 'Focus';
-      sheet.root.querySelector('#timer-caption').textContent = 'Focus session';
+      toast('Focus complete. Nice work!');
+      startButton.textContent = 'Start another focus';
+      startButton.hidden = false;
     }
-    timer = startTimer(phase === 'focus' ? 25 * 60 : 5 * 60, complete, tick);
-    timer.start();
-    toast(phase === 'break' ? 'Focus complete. Take a short break.' : 'Break complete. Ready to focus.');
+    updateControls();
   };
-  startButton.addEventListener('click', start);
-  pauseButton.addEventListener('click', () => timer?.pause());
-  resetButton.addEventListener('click', () => {
-    timer?.cancel();
-    timer = startTimer(phase === 'focus' ? 25 * 60 : 5 * 60, complete, tick);
+  const start = () => {
+    if (completed) {
+      completed = false;
+      focusStartedAt = null;
+      timer = null;
+    }
+    if (!timer) timer = startTimer(durationMinutes * 60, complete, tick);
+    if (!focusStartedAt) focusStartedAt = new Date().toISOString();
+    sheet.root.querySelector('#timer-phase').textContent = 'Focus';
+    startButton.textContent = 'Start focus';
+    delete startButton.dataset.retrySave;
+    timer.start();
+    tick(timer.remaining);
+    updateControls();
+  };
+  const requestEndConfirmation = () => {
+    confirmationStep = Math.min(2, confirmationStep + 1);
+    confirmation.hidden = false;
+    sheet.root.querySelector('#timer-confirmation-title').textContent = confirmationStep === 1
+      ? 'Are you sure you want to end your focus?'
+      : 'Think about it again—your focus time is not over yet.';
+    sheet.root.querySelector('#timer-confirmation-copy').textContent = confirmationStep === 1
+      ? 'You can pause or keep going without ending this session.'
+      : 'Once you end, this focus session cannot be continued.';
+    sheet.root.querySelector('#timer-confirm-end').textContent = confirmationStep === 1
+      ? 'I want to stop'
+      : 'Yes, end my session';
+  };
+  const endSession = async () => {
+    timer?.pause();
+    const elapsedMinutes = Math.floor((durationMinutes * 60 - (timer?.remaining ?? durationMinutes * 60)) / 60);
+    const minutesToSave = completed ? durationMinutes : elapsedMinutes;
+    if (!await saveSession(minutesToSave, completed)) {
+      confirmation.hidden = true;
+      confirmationStep = 0;
+      return;
+    }
+    sessionSavePending = false;
+    if (minutesToSave > 0 && Number(sheet.root.querySelector('#timer-task').value)) {
+      toast(`${minutesToSave} focus ${minutesToSave === 1 ? 'minute' : 'minutes'} saved.`);
+    }
+    sheet.close();
+  };
+  const setDuration = minutes => {
+    durationMinutes = minutes;
+    customDuration.value = String(minutes);
+    timer = null;
+    completed = false;
     focusStartedAt = null;
+    startButton.textContent = 'Start focus';
+    delete startButton.dataset.retrySave;
+    durationButtons.forEach(button => {
+      const selected = Number(button.dataset.duration) === minutes;
+      button.setAttribute('aria-pressed', String(selected));
+    });
+    tick(minutes * 60);
+  };
+
+  durationButtons.forEach(button => button.addEventListener('click', () => setDuration(Number(button.dataset.duration))));
+  sheet.root.querySelector('#custom-duration-form').addEventListener('submit', event => {
+    event.preventDefault();
+    if (!customDuration.reportValidity()) return;
+    setDuration(Number(customDuration.value));
+    durationButtons.forEach(button => button.setAttribute('aria-pressed', 'false'));
+  });
+  startButton.addEventListener('click', async () => {
+    if (startButton.dataset.retrySave) {
+      if (await saveSession(durationMinutes, true)) {
+        sessionSavePending = false;
+        startButton.textContent = 'Start another focus';
+        delete startButton.dataset.retrySave;
+        toast('Focus session saved.');
+        updateControls();
+      }
+      return;
+    }
     start();
   });
+  pauseButton.addEventListener('click', () => {
+    timer?.pause();
+    updateControls();
+  });
+  resumeButton.addEventListener('click', start);
+  endButton.addEventListener('click', requestEndConfirmation);
+  sheet.root.querySelector('#timer-keep-going').addEventListener('click', () => {
+    confirmationStep = 0;
+    confirmation.hidden = true;
+  });
+  sheet.root.querySelector('#timer-confirm-end').addEventListener('click', () => {
+    if (confirmationStep === 1) requestEndConfirmation();
+    else endSession();
+  });
+  tick(durationMinutes * 60);
+  if (startImmediately) start();
 }

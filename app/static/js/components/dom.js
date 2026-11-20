@@ -10,7 +10,7 @@ export function escapeHTML(value) {
   })[character]);
 }
 
-export function showSheet(content, onClose = () => {}) {
+export function showSheet(content, onClose = () => {}, { onRequestClose } = {}) {
   activeSheetClose?.();
   const root = document.querySelector('#modal-root');
   root.innerHTML = `<div class="sheet-backdrop"><section class="bottom-sheet" role="dialog" aria-modal="true">${content}</section></div>`;
@@ -21,15 +21,20 @@ export function showSheet(content, onClose = () => {}) {
     root.replaceChildren();
     if (activeSheetClose === close) activeSheetClose = null;
     onClose();
+    return true;
+  };
+  const requestClose = () => {
+    if (onRequestClose?.() === false) return false;
+    return close();
   };
   const onKeydown = event => {
-    if (event.key === 'Escape' && root.contains(backdrop)) close();
+    if (event.key === 'Escape' && root.contains(backdrop)) requestClose();
   };
   activeSheetClose = close;
   document.addEventListener('keydown', onKeydown);
-  backdrop.querySelectorAll('[data-close-sheet]').forEach(button => button.addEventListener('click', close));
+  backdrop.querySelectorAll('[data-close-sheet]').forEach(button => button.addEventListener('click', requestClose));
   backdrop.addEventListener('click', event => {
-    if (event.target.classList.contains('sheet-backdrop')) close();
+    if (event.target.classList.contains('sheet-backdrop')) requestClose();
   });
   backdrop.querySelector('.bottom-sheet')?.querySelector('input,textarea,select,button')?.focus();
   return { root, close };

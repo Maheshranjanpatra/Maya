@@ -40,8 +40,9 @@ depend on your Google AI Studio project and selected model.
 3. Add exam dates, set daily study capacity and study days, and use Plan to
    review or reschedule the generated schedule. Longer tasks are split into
    daily sessions that stay within the configured capacity.
-4. Complete tasks, use focus sessions and spaced reviews, and track progress
-   in Visuals and Profile.
+4. Complete tasks, start a 15-, 25-, 45-, or 60-minute focus session (or set a
+   custom duration), and use spaced reviews. Ending an active focus session
+   requires two confirmations; track progress in Visuals and Profile.
 5. Use Settings to export an ICS calendar, back up Maya to JSON, or restore a
    backup.
 

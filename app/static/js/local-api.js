@@ -819,8 +819,10 @@ async function dispatch(path, method, options, query) {
       return { scheduled_date: scheduledDate };
     }
     if (parts[2] === 'session' && method === 'POST') {
-      const minutes = Number(data.minutes || 25);
-      if (minutes < 1 || minutes > 240) fail('Session duration must be between 1 and 240 minutes.');
+      const minutes = data.minutes === undefined ? 25 : Number(data.minutes);
+      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 240) {
+        fail('Session duration must be between 1 and 240 whole minutes.');
+      }
       const started = data.started_at || new Date().toISOString();
       const xp = data.completed === false ? 0 : Math.max(1, Math.floor(minutes / 5));
       const ended = new Date().toISOString();

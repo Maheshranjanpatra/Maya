@@ -177,6 +177,15 @@ test('a Pomodoro session and its XP event are saved together', async () => {
   assert.equal(stores.xp_events[0].ref_id, stores.task_sessions[0].id);
 });
 
+test('ending a focus session early saves study minutes without completion XP', async () => {
+  seed({ tasks: [{ id: 1, type: 'read', status: 'pending', actual_minutes: 0 }] });
+  await request('/api/tasks/1/session', 'POST', { minutes: 7, completed: false });
+
+  assert.equal(stores.task_sessions[0].minutes, 7);
+  assert.equal(stores.tasks[0].actual_minutes, 7);
+  assert.equal(stores.xp_events.length, 0);
+});
+
 test('a failed Pomodoro XP write rolls back its session and task update', async () => {
   seed({ tasks: [{ id: 1, type: 'read', status: 'pending', actual_minutes: 0 }] });
   failStore = 'xp_events';
@@ -186,6 +195,19 @@ test('a failed Pomodoro XP write rolls back its session and task update', async 
   assert.equal(stores.task_sessions.length, 0);
   assert.equal(stores.tasks[0].actual_minutes, 0);
   assert.equal(stores.xp_events.length, 0);
+});
+
+test('invalid focus session durations are rejected without changing study data', async () => {
+  seed({ tasks: [{ id: 1, type: 'read', status: 'pending', actual_minutes: 0 }] });
+  const before = structuredClone(stores);
+
+  for (const minutes of [0, 0.5, 241, 'not-a-number']) {
+    await assert.rejects(
+      request('/api/tasks/1/session', 'POST', { minutes }),
+      /Session duration must be between 1 and 240 whole minutes/
+    );
+    assert.deepEqual(stores, before);
+  }
 });
 
 test('invalid backups are rejected without replacing local study data', async () => {

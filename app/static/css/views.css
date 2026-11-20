@@ -261,6 +261,130 @@
   background: var(--primary-soft);
 }
 
+.focus-quickstarts,
+.focus-presets,
+.focus-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.focus-quickstarts .button,
+.focus-presets .button {
+  min-height: 40px;
+  padding: 8px 11px;
+}
+
+.focus-presets [aria-pressed="true"] {
+  border-color: var(--primary) !important;
+  background: var(--primary-soft) !important;
+  color: var(--primary) !important;
+}
+
+.focus-duration {
+  min-width: 0;
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.focus-duration legend {
+  padding: 0 5px;
+}
+
+.custom-duration {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.custom-duration label {
+  grid-column: 1 / -1;
+}
+
+.custom-duration input {
+  width: 100%;
+}
+
+.timer-face {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  margin: 20px 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.timer-ring {
+  position: relative;
+  display: grid;
+  width: min(68vw, 270px);
+  aspect-ratio: 1;
+  place-items: center;
+}
+
+.timer-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform: rotate(-90deg);
+}
+
+.timer-ring-track,
+.timer-ring-progress {
+  fill: none;
+  stroke-width: 7;
+}
+
+.timer-ring-track {
+  stroke: var(--surface-3);
+}
+
+.timer-ring-progress {
+  stroke: var(--primary);
+  stroke-linecap: round;
+  stroke-dasharray: 326.73;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset .35s linear;
+}
+
+.timer-ring-content {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.timer-ring-content .timer-clock {
+  font-size: clamp(2.5rem, 11vw, 3.5rem);
+}
+
+.focus-confirmation {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+  background: var(--danger-soft);
+}
+
+.focus-confirmation h3 {
+  margin: 0;
+}
+
+.focus-confirmation p {
+  margin: 8px 0 14px;
+}
+
+.focus-confirmation .focus-controls > * {
+  flex: 1 1 160px;
+}
+
 .timer-clock {
   font-variant-numeric: tabular-nums;
   font-size: 1.7rem;
@@ -806,5 +930,14 @@
   }
   .plan-grid {
     grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 619px) {
+  .timer-widget {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .focus-quickstarts {
+    justify-content: flex-start;
   }
 }
