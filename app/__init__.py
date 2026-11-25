@@ -2,12 +2,13 @@ import logging
 
 from flask import Flask, jsonify, render_template, send_from_directory
 from dotenv import load_dotenv
-from .config import Config
 
 
 def create_app(test_config=None):
     load_dotenv()
-    app=Flask(__name__)
+    from .config import Config
+
+    app = Flask(__name__)
     app.config.from_object(Config)
     if test_config:
         app.config.update(test_config)

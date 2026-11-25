@@ -9,6 +9,11 @@ import { ICONS } from '../components/icons.js';
 const TYPES = ['read', 'notes', 'practice', 'pastpaper', 'revise', 'mocktest', 'lab', 'assignment'];
 let taskCache = [];
 let subjectsCache = [];
+const taskViewState = {
+  filter: 'active',
+  subjectId: '',
+  query: ''
+};
 
 const localDateKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
@@ -70,6 +75,9 @@ export async function render(container) {
   }
 
   populateSubjectFilter(container);
+  container.querySelector('#task-filter').value = taskViewState.filter;
+  container.querySelector('#subject-filter').value = taskViewState.subjectId;
+  container.querySelector('#task-search').value = taskViewState.query;
   ['#task-search', '#task-filter', '#subject-filter'].forEach(selector => {
     container.querySelector(selector).addEventListener('input', () => drawTasks(container));
   });
@@ -151,6 +159,9 @@ function filteredTasks(container) {
 }
 
 function drawTasks(container) {
+  taskViewState.filter = container.querySelector('#task-filter').value;
+  taskViewState.subjectId = container.querySelector('#subject-filter').value;
+  taskViewState.query = container.querySelector('#task-search').value;
   drawDashboard(container);
   const list = container.querySelector('#task-list');
   const tasks = filteredTasks(container);

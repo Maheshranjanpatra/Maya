@@ -19,7 +19,16 @@ Open [http://localhost:8000](http://localhost:8000). Flask serves the app and
 its optional AI endpoints; it does not store study records. Subjects, tasks,
 plans, settings, progress, and the AI API key are stored in the browser's
 IndexedDB on the device where Maya is opened. Set `PORT` to change the server
-port or `MAX_UPLOAD_MB` to change the upload size limit.
+port or `MAX_UPLOAD_MB` to change the upload size limit. Maya listens on
+`127.0.0.1` by default. To expose it on another host, set `MAYA_HOST` and
+provide both `MAYA_SSL_CERT` and `MAYA_SSL_KEY`; remote access without TLS is
+refused. Do not expose the development server directly to the public internet.
+
+AI endpoints are limited to 10 requests per client per minute by default and
+time out after 60 seconds. Temporary provider errors are retried up to twice.
+Configure these limits with `AI_REQUESTS_PER_MINUTE` and `AI_TIMEOUT_SECONDS`.
+Syllabus uploads are validated by their file content and capped at 12 MB; text
+extracted or pasted for AI processing is size-limited.
 
 ## AI features
 

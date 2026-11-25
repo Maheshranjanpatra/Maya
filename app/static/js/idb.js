@@ -72,28 +72,62 @@ export const IDB = {
   },
 
   batch(operations) {
+    if (!operations.length) return Promise.resolve([]);
     return new Promise((resolve, reject) => {
       const stores = [...new Set(operations.map(item => item.store))];
       const transaction = db.transaction(stores, 'readwrite');
-      const requests = [];
-      for (const [index, item] of operations.entries()) {
-        if (typeof item.value === 'function') {
-          const dependency = requests[item.dependsOn];
-          if (!dependency) {
-            transaction.abort();
-            reject(new Error('A batched write depends on a missing request.'));
-            return;
+      const requests = Array(operations.length);
+      const results = Array(operations.length);
+      const completed = new Set();
+      const dependenciesFor = item => item.dependsOn === undefined
+        ? []
+        : Array.isArray(item.dependsOn) ? item.dependsOn : [item.dependsOn];
+      const dependencies = operations.map(dependenciesFor);
+      const dependents = Array.from({ length: operations.length }, () => []);
+      dependencies.forEach((items, index) => items.forEach(dependency => {
+        dependents[dependency]?.push(index);
+      }));
+      const schedule = index => {
+        if (requests[index]) return;
+        const item = operations[index];
+        const required = dependencies[index];
+        if (!required.every(dependency => completed.has(dependency))) return;
+        try {
+          let value = item.value;
+          if (typeof value === 'function') {
+            const input = Array.isArray(item.dependsOn)
+              ? Object.fromEntries(required.map(dependency => [dependency, results[dependency]]))
+              : required.length ? results[required[0]] : undefined;
+            value = value(input);
           }
-          dependency.onsuccess = () => {
-            requests[index] = transaction.objectStore(item.store)[item.operation](item.value(dependency.result));
+          const request = transaction.objectStore(item.store)[item.operation](value);
+          requests[index] = request;
+          request.onsuccess = () => {
+            results[index] = request.result;
+            completed.add(index);
+            dependents[index].forEach(schedule);
           };
-        } else {
-          requests[index] = transaction.objectStore(item.store)[item.operation](item.value);
+        } catch (error) {
+          transaction.abort();
+          reject(error);
         }
-      }
-      transaction.oncomplete = () => resolve(requests.map(request => request.result));
+      };
+      transaction.oncomplete = () => resolve(results);
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
+      const hasInvalidDependency = dependencies.some((items, index) =>
+        items.some(dependency =>
+          !Number.isInteger(dependency) || dependency < 0 || dependency >= index
+        )
+      );
+      if (hasInvalidDependency) {
+        transaction.abort();
+        reject(new Error('A batched write depends on a missing request.'));
+        return;
+      }
+      operations.forEach((item, index) => {
+        if (!dependencies[index].length) schedule(index);
+      });
     });
   },
 

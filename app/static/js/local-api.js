@@ -927,68 +927,162 @@ async function commitExtraction(extraction) {
   const subjects = extraction.subjects || [];
   const existing = (await all('subjects')).filter(subject => !subject.archived).length;
   if (existing + subjects.length > 12) fail('Maya supports up to 12 active subjects. Archive one first.', 409);
-  const ids = [];
+  const operations = [];
+  const subjectIndexes = [];
+  const subjectContexts = [];
+  const addOperation = (store, value, dependsOn = []) => {
+    const index = operations.length;
+    const operation = { store, operation: 'add', value };
+    if (dependsOn.length) operation.dependsOn = dependsOn;
+    operations.push(operation);
+    return index;
+  };
+
   for (const source of subjects) {
-    const subjectId = await add('subjects', { name: source.name.trim(), code: source.code || null, color: '#5B5BD6', credits: source.credits ?? null, exam_weight: 100, archived: 0, created_at: new Date().toISOString() });
-    ids.push(subjectId);
-    const topicIds = new Map();
-    const unitRows = [];
+    const subjectIndex = addOperation('subjects', {
+      name: source.name.trim(),
+      code: source.code || null,
+      color: '#5B5BD6',
+      credits: source.credits ?? null,
+      exam_weight: 100,
+      archived: 0,
+      created_at: new Date().toISOString()
+    });
+    subjectIndexes.push(subjectIndex);
+    const topicIndexesByName = new Map();
+    const units = [];
     for (const [index, unit] of [...(source.units || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0)).entries()) {
-      const unitId = await add('units', { subject_id: subjectId, name: unit.name.trim(), order_index: index + 1 });
+      const unitIndex = addOperation('units', ids => ({
+        subject_id: ids[subjectIndex],
+        name: unit.name.trim(),
+        order_index: index + 1
+      }), [subjectIndex]);
       const topicRows = [];
       for (const topic of unit.topics || []) {
-        const topicId = await add('topics', { unit_id: unitId, name: topic.name.trim(), difficulty: Number(topic.difficulty || 3), marks: Number(topic.marks || 0), est_minutes: Math.max(15, Math.round(Number(topic.est_hours || 1) * 60)), confidence: Number(topic.confidence ?? 0.8), notes: '', parent_topic_id: null });
-        topicIds.set(topic.name.toLowerCase(), topicId);
-        topicRows.push({ ...topic, id: topicId, name: topic.name });
+        const topicIndex = addOperation('topics', ids => ({
+          unit_id: ids[unitIndex],
+          name: topic.name.trim(),
+          difficulty: Number(topic.difficulty || 3),
+          marks: Number(topic.marks || 0),
+          est_minutes: Math.max(15, Math.round(Number(topic.est_hours || 1) * 60)),
+          confidence: Number(topic.confidence ?? 0.8),
+          notes: '',
+          parent_topic_id: null
+        }), [unitIndex]);
+        topicIndexesByName.set(topic.name.toLowerCase(), topicIndex);
+        topicRows.push({ source: topic, topicIndex, estHours: Number(topic.est_hours || 1) });
         for (const subtopic of topic.subtopics || []) {
-          const subtopicId = await add('topics', { unit_id: unitId, parent_topic_id: topicId, name: subtopic.trim(), difficulty: Number(topic.difficulty || 3), marks: 0, est_minutes: Math.max(15, Math.round(Number(topic.est_hours || 1) * 30)), confidence: Number(topic.confidence ?? 0.8), notes: '' });
-          topicIds.set(subtopic.toLowerCase(), subtopicId);
-          topicRows.push({ id: subtopicId, name: subtopic.trim(), difficulty: topic.difficulty, marks: 0, est_hours: Number(topic.est_hours || 1) / 2, prerequisites: [], subtopics: [] });
+          const subtopicIndex = addOperation('topics', ids => ({
+            unit_id: ids[unitIndex],
+            parent_topic_id: ids[topicIndex],
+            name: subtopic.trim(),
+            difficulty: Number(topic.difficulty || 3),
+            marks: 0,
+            est_minutes: Math.max(15, Math.round(Number(topic.est_hours || 1) * 30)),
+            confidence: Number(topic.confidence ?? 0.8),
+            notes: ''
+          }), [unitIndex, topicIndex]);
+          topicIndexesByName.set(subtopic.toLowerCase(), subtopicIndex);
+          topicRows.push({
+            source: { ...topic, name: subtopic.trim(), prerequisites: [] },
+            topicIndex: subtopicIndex,
+            estHours: Number(topic.est_hours || 1) / 2
+          });
         }
       }
-      unitRows.push({ id: unitId, name: unit.name, topics: topicRows });
+      units.push({ name: unit.name, topicRows });
     }
-    for (const unit of unitRows) {
-      for (const topic of unit.topics) {
-        for (const prerequisiteName of topic.prerequisites || []) {
-          const prerequisiteId = topicIds.get(prerequisiteName.toLowerCase());
-          if (prerequisiteId && prerequisiteId !== topic.id) {
-            await add('prereqs', { topic_id: topic.id, prereq_topic_id: prerequisiteId });
-          }
-        }
+    subjectContexts.push({ subjectIndex, topicIndexesByName, units });
+  }
+
+  for (const context of subjectContexts) {
+    context.readTaskIndexes = new Map();
+    context.notesTaskIndexes = new Map();
+    for (const unit of context.units) {
+      for (const topic of unit.topicRows) {
+        const taskIndex = addOperation('tasks', ids => ({
+          topic_id: ids[topic.topicIndex],
+          subject_id: ids[context.subjectIndex],
+          type: 'read',
+          title: `Read: ${topic.source.name}`,
+          est_minutes: Math.max(15, Math.round(topic.estHours * 60 / 5) * 5),
+          priority_score: 0,
+          status: 'pending',
+          created_by: 'ai'
+        }), [context.subjectIndex, topic.topicIndex]);
+        context.readTaskIndexes.set(topic.topicIndex, taskIndex);
+      }
+      if (!unit.topicRows.length) continue;
+      const totalHours = unit.topicRows.reduce((sum, topic) => sum + topic.estHours, 0);
+      const notesTaskIndex = addOperation('tasks', ids => ({
+        subject_id: ids[context.subjectIndex],
+        type: 'notes',
+        title: `Make notes: ${unit.name}`,
+        est_minutes: Math.max(15, Math.round(totalHours * 18 / 5) * 5),
+        status: 'pending',
+        created_by: 'ai'
+      }), [context.subjectIndex]);
+      context.notesTaskIndexes.set(unit, notesTaskIndex);
+      if (unit.topicRows.some(topic => Number(topic.source.difficulty || 3) >= 3)) {
+        const practiceTaskIndex = addOperation('tasks', ids => ({
+          subject_id: ids[context.subjectIndex],
+          type: 'practice',
+          title: `Practice: ${unit.name}`,
+          est_minutes: Math.max(15, Math.round(totalHours * 30 / 5) * 5),
+          status: 'pending',
+          created_by: 'ai'
+        }), [context.subjectIndex]);
+        unit.practiceTaskIndex = practiceTaskIndex;
       }
     }
-    const readTaskIds = new Map();
-    for (const unit of unitRows) {
-      const readTasks = new Map();
-      for (const topic of unit.topics) {
-        const taskId = await add('tasks', { topic_id: topic.id, subject_id: subjectId, type: 'read', title: `Read: ${topic.name}`, est_minutes: Math.max(15, Math.round(Number(topic.est_hours || 1) * 60 / 5) * 5), priority_score: 0, status: 'pending', created_by: 'ai' });
-        readTasks.set(topic.id, taskId);
-        readTaskIds.set(topic.id, taskId);
+  }
+
+  for (const context of subjectContexts) {
+    for (const unit of context.units) {
+      const notesTaskIndex = context.notesTaskIndexes.get(unit);
+      if (notesTaskIndex === undefined) continue;
+      for (const topic of unit.topicRows) {
+        const readTaskIndex = context.readTaskIndexes.get(topic.topicIndex);
+        addOperation('task_dependencies', ids => ({
+          task_id: ids[notesTaskIndex],
+          prereq_task_id: ids[readTaskIndex]
+        }), [notesTaskIndex, readTaskIndex]);
       }
-      if (!unit.topics.length) continue;
-      const totalHours = unit.topics.reduce((sum, topic) => sum + Number(topic.est_hours || 1), 0);
-      const notesId = await add('tasks', { subject_id: subjectId, type: 'notes', title: `Make notes: ${unit.name}`, est_minutes: Math.max(15, Math.round(totalHours * 18 / 5) * 5), status: 'pending', created_by: 'ai' });
-      for (const readId of readTasks.values()) await add('task_dependencies', { task_id: notesId, prereq_task_id: readId });
-      if (unit.topics.some(topic => Number(topic.difficulty || 3) >= 3)) {
-        const practiceId = await add('tasks', { subject_id: subjectId, type: 'practice', title: `Practice: ${unit.name}`, est_minutes: Math.max(15, Math.round(totalHours * 30 / 5) * 5), status: 'pending', created_by: 'ai' });
-        await add('task_dependencies', { task_id: practiceId, prereq_task_id: notesId });
+      if (unit.practiceTaskIndex !== undefined) {
+        addOperation('task_dependencies', ids => ({
+          task_id: ids[unit.practiceTaskIndex],
+          prereq_task_id: ids[notesTaskIndex]
+        }), [unit.practiceTaskIndex, notesTaskIndex]);
       }
     }
-    for (const unit of unitRows) {
-      for (const topic of unit.topics) {
-        const taskId = readTaskIds.get(topic.id);
-        for (const prereqName of topic.prerequisites || []) {
-          const prerequisiteTopicId = topicIds.get(prereqName.toLowerCase());
-          const prerequisiteTaskId = readTaskIds.get(prerequisiteTopicId);
-          if (taskId && prerequisiteTaskId) {
-            await add('task_dependencies', { task_id: taskId, prereq_task_id: prerequisiteTaskId });
-          }
+
+    for (const unit of context.units) {
+      for (const topic of unit.topicRows) {
+        for (const prerequisiteName of topic.source.prerequisites || []) {
+          const prerequisiteTopicIndex = context.topicIndexesByName.get(prerequisiteName.toLowerCase());
+          const taskIndex = context.readTaskIndexes.get(topic.topicIndex);
+          const prerequisiteTaskIndex = context.readTaskIndexes.get(prerequisiteTopicIndex);
+          if (taskIndex === undefined || prerequisiteTaskIndex === undefined || taskIndex === prerequisiteTaskIndex) continue;
+          addOperation('prereqs', ids => ({
+            topic_id: ids[topic.topicIndex],
+            prereq_topic_id: ids[prerequisiteTopicIndex]
+          }), [topic.topicIndex, prerequisiteTopicIndex]);
+          addOperation('task_dependencies', ids => ({
+            task_id: ids[taskIndex],
+            prereq_task_id: ids[prerequisiteTaskIndex]
+          }), [taskIndex, prerequisiteTaskIndex]);
         }
       }
     }
   }
-  return { subject_ids: ids, active_subjects: existing + ids.length, soft_cap_warning: existing + ids.length >= 10, warnings: extraction.warnings || [] };
+
+  const results = await IDB.batch(operations);
+  return {
+    subject_ids: subjectIndexes.map(index => results[index]),
+    active_subjects: existing + subjectIndexes.length,
+    soft_cap_warning: existing + subjectIndexes.length >= 10,
+    warnings: extraction.warnings || []
+  };
 }
 
 export async function localApi(path, options = {}) {

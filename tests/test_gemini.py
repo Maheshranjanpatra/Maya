@@ -21,6 +21,7 @@ def test_provider_uses_supported_gemini_model(monkeypatch):
     provider = get_provider("test-key")
 
     assert provider.model.name == "gemini-3.6-flash"
+    assert provider.timeout == 60
     assert models == ["gemini-3.6-flash"]
 
 
@@ -84,3 +85,41 @@ def test_invalid_json_has_a_response_format_error():
 
     with pytest.raises(AIProviderError, match="expected JSON structure"):
         asyncio.run(provider.complete_json("prompt", "syllabus", None))
+
+
+def test_transient_provider_failures_retry_with_backoff(monkeypatch):
+    attempts = []
+    provider = object.__new__(GeminiProvider)
+
+    def generate_content(*_args, **_kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("503 service unavailable")
+        return SimpleNamespace(text="response")
+
+    provider.model = SimpleNamespace(generate_content=generate_content)
+    provider.timeout = 60
+    monkeypatch.setattr("app.services.ai.gemini.time.sleep", lambda _delay: None)
+
+    result = asyncio.run(provider._generate("prompt"))
+
+    assert result == "response"
+    assert len(attempts) == 2
+
+
+def test_non_transient_provider_failures_are_not_retried(monkeypatch):
+    attempts = []
+    provider = object.__new__(GeminiProvider)
+
+    def generate_content(*_args, **_kwargs):
+        attempts.append(1)
+        raise RuntimeError("403 API_KEY_INVALID")
+
+    provider.model = SimpleNamespace(generate_content=generate_content)
+    provider.timeout = 60
+    monkeypatch.setattr("app.services.ai.gemini.time.sleep", lambda _delay: None)
+
+    with pytest.raises(AIProviderError, match="rejected this API key"):
+        asyncio.run(provider.complete_json("prompt", "syllabus", None))
+
+    assert len(attempts) == 1

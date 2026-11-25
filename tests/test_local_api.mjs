@@ -35,9 +35,10 @@ function seed(data = {}) {
       const results = [];
       for (const item of operations) {
         if (failStore === item.store) throw new Error('Simulated IndexedDB write failure.');
-        const value = typeof item.value === 'function'
-          ? item.value(results[item.dependsOn])
-          : item.value;
+        const dependencyValues = Array.isArray(item.dependsOn)
+          ? Object.fromEntries(item.dependsOn.map(index => [index, results[index]]))
+          : results[item.dependsOn];
+        const value = typeof item.value === 'function' ? item.value(dependencyValues) : item.value;
         results.push(applyOperation(item.store, item.operation, value));
       }
       return results;
@@ -195,6 +196,53 @@ test('a failed Pomodoro XP write rolls back its session and task update', async 
   assert.equal(stores.task_sessions.length, 0);
   assert.equal(stores.tasks[0].actual_minutes, 0);
   assert.equal(stores.xp_events.length, 0);
+});
+
+test('syllabus extraction commits linked records together', async () => {
+  seed();
+  const result = await request('/api/extract/commit', 'POST', {
+    extraction: {
+      subjects: [{
+        name: 'Biology',
+        units: [{
+          name: 'Cells',
+          topics: [
+            { name: 'Cell structure', est_hours: 1, difficulty: 4, prerequisites: [] },
+            { name: 'Cell division', est_hours: 2, difficulty: 3, prerequisites: ['Cell structure'], subtopics: ['Mitosis'] }
+          ]
+        }]
+      }]
+    }
+  });
+
+  assert.equal(stores.subjects.length, 1);
+  assert.equal(stores.units[0].subject_id, result.subject_ids[0]);
+  assert.equal(stores.topics.length, 3);
+  assert.ok(stores.topics.every(topic => topic.unit_id === stores.units[0].id));
+  assert.equal(stores.prereqs.length, 1);
+  assert.equal(stores.task_dependencies.length, 5);
+  assert.ok(stores.tasks.every(task => task.subject_id === result.subject_ids[0]));
+  assert.ok(stores.tasks.some(task => task.title === 'Read: Mitosis'));
+});
+
+test('a failed syllabus extraction write leaves no partial study data', async () => {
+  seed();
+  failStore = 'tasks';
+  await assert.rejects(request('/api/extract/commit', 'POST', {
+    extraction: {
+      subjects: [{
+        name: 'Biology',
+        units: [{ name: 'Cells', topics: [{ name: 'Cell structure' }] }]
+      }]
+    }
+  }), /Simulated IndexedDB write failure/);
+  failStore = undefined;
+
+  assert.equal(stores.subjects.length, 0);
+  assert.equal(stores.units.length, 0);
+  assert.equal(stores.topics.length, 0);
+  assert.equal(stores.tasks.length, 0);
+  assert.equal(stores.task_dependencies.length, 0);
 });
 
 test('invalid focus session durations are rejected without changing study data', async () => {

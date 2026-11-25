@@ -77,8 +77,7 @@ async function setupApp() {
   else await route();
 
   try {
-    const result = await api('/api/plan/replan', { method: 'POST', body: '{}' });
-    if (result.crunch && result.explanation) toast(result.explanation);
+    await api('/api/plan/replan', { method: 'POST', body: '{}' });
   } catch (error) {
     toast(error.message);
   }
@@ -90,6 +89,8 @@ async function setupApp() {
       updateViaCache: 'none'
     }).then(registration => {
       let updatePromptShown = false;
+      let updateCheckRunning = false;
+      let updateCheckFailed = false;
 
       const showUpdatePrompt = worker => {
         if (updatePromptShown || !navigator.serviceWorker.controller) return;
@@ -112,9 +113,15 @@ async function setupApp() {
       });
 
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-          registration.update().catch(error => console.error('Maya update check failed:', error));
-        }
+        if (document.visibilityState !== 'visible' || !navigator.onLine || updateCheckRunning) return;
+        updateCheckRunning = true;
+        registration.update()
+          .then(() => { updateCheckFailed = false; })
+          .catch(error => {
+            if (!updateCheckFailed) console.warn('Maya update check failed:', error);
+            updateCheckFailed = true;
+          })
+          .finally(() => { updateCheckRunning = false; });
       });
     }).catch(() => {
       toast('Offline support could not start. Reload Maya when you are online.');

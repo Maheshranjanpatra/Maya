@@ -1,10 +1,34 @@
 import asyncio
 import json
 import re
+import time
 
 from pydantic import ValidationError
 
 from .base import AIProvider, AIProviderError
+
+MAX_RETRIES = 2
+RETRY_DELAYS_SECONDS = (0.25, 0.5)
+
+
+def _is_transient(error):
+    status = getattr(error, "status_code", None) or getattr(error, "code", None)
+    if status in {429, 500, 502, 503, 504}:
+        return True
+    detail = str(error).lower()
+    return any(
+        marker in detail
+        for marker in (
+            "429",
+            "500",
+            "502",
+            "503",
+            "504",
+            "resource_exhausted",
+            "temporarily unavailable",
+            "service unavailable",
+        )
+    )
 
 
 def _request_error(error):
@@ -28,6 +52,13 @@ def _request_error(error):
             "The selected model was not found or is unavailable to this API key. "
             "Choose another model in Settings."
         )
+    elif (
+        "timed out" in lowered
+        or "deadline exceeded" in lowered
+        or "request timeout" in lowered
+        or error.__class__.__name__.lower() in {"timeout", "timeoutexception", "readtimeout", "connecttimeout"}
+    ):
+        message = "The AI request timed out. Try again."
     else:
         detail = re.sub(r"AIza[0-9A-Za-z_-]{20,}", "[redacted API key]", detail)
         detail = re.sub(r"(?i)(key=)[^&\s]+", r"\1[redacted]", detail)
@@ -41,11 +72,12 @@ class GeminiProvider(AIProvider):
     name = "Gemini"
     supports_vision = True
 
-    def __init__(self, key, model):
+    def __init__(self, key, model, timeout=60):
         import google.generativeai as genai
 
         genai.configure(api_key=key)
         self.model = genai.GenerativeModel(model)
+        self.timeout = max(1, int(timeout))
 
     async def _generate(self, prompt, media_bytes=None, media_mime_type=None, json_mode=False):
         def call():
@@ -62,12 +94,22 @@ class GeminiProvider(AIProvider):
                 if json_mode
                 else None
             )
-            response = self.model.generate_content(
-                parts, generation_config=config
-            )
-            if not response.text:
-                raise AIProviderError("Gemini returned an empty response.")
-            return response.text
+            for attempt in range(MAX_RETRIES + 1):
+                try:
+                    response = self.model.generate_content(
+                        parts,
+                        generation_config=config,
+                        request_options={"timeout": self.timeout},
+                    )
+                    if not response.text:
+                        raise AIProviderError("Gemini returned an empty response.")
+                    return response.text
+                except AIProviderError:
+                    raise
+                except Exception as error:
+                    if attempt == MAX_RETRIES or not _is_transient(error):
+                        raise
+                    time.sleep(RETRY_DELAYS_SECONDS[attempt])
 
         return await asyncio.to_thread(call)
 
